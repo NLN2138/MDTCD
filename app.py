@@ -2,231 +2,236 @@ import streamlit as st
 import plotly.graph_objects as go
 import plotly.express as px
 import spacy
+from spacy import displacy
+import re
+import json
+import pandas as pd
 
 # 載入核心計算模組
 from core.syntactic_engine import calculate_mdd_and_memory_load, calculate_l2sca_approximations
 
-# 頁面配置
-st.set_page_config(page_title="TW-EFL MDTCD 診斷系統", layout="wide", initial_sidebar_state="expanded")
+# -----------------------------------------------------------------------------
+# 1. 頁面配置與 Session State 初始化
+# -----------------------------------------------------------------------------
+st.set_page_config(
+    page_title="TW-EFL MDTCD 診斷系統", 
+    page_icon="🇹🇼",
+    layout="wide", 
+    initial_sidebar_state="expanded"
+)
+
+# 初始化歷程紀錄
+if "history" not in st.session_state:
+    st.session_state.history = []
+
+# 自訂 CSS 樣式
+st.markdown("""
+<style>
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+    
+    .header-container {
+        position: sticky;
+        top: 0;
+        z-index: 999;
+        background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
+        color: white;
+        padding: 1rem 2rem;
+        margin: -1rem -2rem 1.5rem -2rem;
+        box-shadow: 0 4px 20px rgba(0,0,0,0.15);
+        border-bottom: 3px solid #3b82f6;
+    }
+    .header-title { font-size: 1.85rem !important; font-weight: 800 !important; color: #ffffff !important; margin: 0 !important; }
+    .header-subtitle { font-size: 0.95rem !important; color: #94a3b8 !important; margin-top: 4px !important; }
+
+    [data-testid="stMetricValue"] { font-size: 2.1rem !important; font-weight: 700 !important; color: #1e293b; }
+    
+    .custom-card { background-color: #ffffff; border-radius: 12px; padding: 1.25rem; border: 1px solid #e2e8f0; box-shadow: 0 1px 3px rgba(0,0,0,0.05); margin-bottom: 1rem; }
+    .warning-box { background-color: #fffbebf5; border-left: 5px solid #f59e0b; padding: 1rem; border-radius: 6px; margin-bottom: 1rem; }
+    .error-box { background-color: #fef2f2; border-left: 5px solid #ef4444; padding: 1rem; border-radius: 6px; margin-bottom: 1rem; }
+    .success-box { background-color: #f0fdf4; border-left: 5px solid #22c55e; padding: 1rem; border-radius: 6px; margin-bottom: 1rem; }
+</style>
+""", unsafe_allow_html=True)
 
 # -----------------------------------------------------------------------------
-# 1. 大標題與簡介 (固定於頁面最上方)
+# 2. 頂部固定大標題 (Sticky Header)
 # -----------------------------------------------------------------------------
-st.title("🇹🇼 台灣英語教材多維度複雜度自動化診斷系統 (MDTCD)")
-st.caption("Multi-Dimensional Textbook Complexity Diagnostics System | 融合 SLA、依存語法與 XAI 可解釋性 AI 原則")
-st.markdown("---")
+st.markdown("""
+<div class="header-container">
+    <div class="header-title">🇹🇼 台灣英語教材多維度複雜度自動化診斷系統 (MDTCD)</div>
+    <div class="header-subtitle">Multi-Dimensional Textbook Complexity Diagnostics System | 融合 SLA、依存語法與 XAI 可解釋性 AI 原則</div>
+</div>
+""", unsafe_allow_html=True)
 
-# 常模對照資料庫 (對齊 Ting 2024 實證數據)
+# 標竿資料庫 (Ting 2024 數據)
 NORMS = {
-    "高中五年級/高二 (Ting 2024)": {"MLS": 17.97, "CNP/C": 1.14, "MDD_target": 2.2, "AWL_target": "12%"},
-    "學測優秀作文 (GSAT)": {"MLS": 19.28, "CNP/C": 1.03, "MDD_target": 2.4, "AWL_target": "10%"},
-    "真實學術論文 (RA)": {"MLS": 27.31, "CNP/C": 2.32, "MDD_target": 3.2, "AWL_target": "22%"}
+    "高中五年級/高二 (Ting 2024)": {"MLS": 17.97, "CNP/C": 1.14, "MDD_target": 2.2},
+    "學測優秀作文 (GSAT)": {"MLS": 19.28, "CNP/C": 1.03, "MDD_target": 2.4},
+    "真實學術論文 (RA)": {"MLS": 27.31, "CNP/C": 2.32, "MDD_target": 3.2}
 }
 
 # -----------------------------------------------------------------------------
-# 2. 側邊欄：目標基準設定
+# 3. 側邊欄：標竿設定與系統參數可調區
 # -----------------------------------------------------------------------------
-st.sidebar.header("🎯 教材與年級設定")
-target_level = st.sidebar.selectbox(
-    "選擇對照標竿年級 / 語體",
-    options=list(NORMS.keys()),
-    index=0
-)
-
-# 取得當前選中的標竿數據
+st.sidebar.header("🎯 標竿對照設定")
+target_level = st.sidebar.selectbox("選擇目標語體 / 年級階梯", options=list(NORMS.keys()), index=0)
 current_norm = NORMS[target_level]
 
 st.sidebar.markdown("---")
-st.sidebar.subheader("📌 標竿參考基準")
-st.sidebar.write(f"• **MLS (平均句長)**: {current_norm['MLS']}")
-st.sidebar.write(f"• **CNP/C (複雜名詞組)**: {current_norm['CNP/C']}")
-st.sidebar.write(f"• **MDD (平均依存距離)**: {current_norm['MDD_target']}")
+st.sidebar.header("⚙️ 系統參數自訂區")
+
+# 1. MDD 門檻自訂（預設 Liu et al. 2017 臨界值 3.0）
+mdd_threshold = st.sidebar.slider(
+    "MDD 認知超載臨界值 (Liu et al., 2017)",
+    min_value=1.5, max_value=4.5, value=3.0, step=0.1,
+    help="預設為 3.0。若單句/全篇 MDD 超過此數值，大腦工作記憶解讀負擔將顯著上升。"
+)
+
+# 2. Cowan 工作記憶 4-chunk 超載門檻自訂
+arcs_threshold = st.sidebar.slider(
+    "未閉合依存弧超載門檻 (Cowan, 2001)",
+    min_value=2, max_value=7, value=4, step=1,
+    help="預設為 4 條弧線。當單字上空跨越的依存弧 ≥ 4 時，觸發工作記憶超載預警。"
+)
+
+st.sidebar.markdown("---")
+st.sidebar.markdown("### 📊 當前對照基準")
+st.sidebar.write(f"• **MLS (句長)**: {current_norm['MLS']}")
+st.sidebar.write(f"• **CNP/C (名詞組)**: {current_norm['CNP/C']}")
+st.sidebar.write(f"• **MDD (基準)**: {current_norm['MDD_target']}")
 
 # -----------------------------------------------------------------------------
-# 3. 輸入區與送出按鈕
+# 4. 輸入區（支援單篇與批次檔案上傳）
 # -----------------------------------------------------------------------------
 default_sample = (
-    "Title: The Digital Footprint of Modern Society\n\n"
-    "In today's interconnected world, almost every online action leaves a digital trace that reflects our personal habits, interests, and behaviors. "
+    "Title: The Digital Footprint of Modern Society.\n\n"
+    "In today's interconnected world, almost every online action leaves a digital trace that reflects our personal habits, interests, and behaviors.\n"
     "As teenagers navigate various social media platforms, they often share personal opinions and life moments without realizing the potential consequences of their online presence.\n\n"
-    "According to recent educational studies on digital literacy, internet users who regularly broadcast their daily activities to the public tend to expose themselves to potential privacy risks. "
-    "Furthermore, algorithms designed by large technology corporations analyze these massive amounts of user data to deliver targeted advertisements, which subtly influences individual decision-making processes. "
+    "According to recent educational studies on digital literacy, internet users who regularly broadcast their daily activities to the public tend to expose themselves to potential privacy risks.\n"
+    "Furthermore, algorithms designed by large technology corporations analyze these massive amounts of user data to deliver targeted advertisements, which subtly influences individual decision-making processes.\n"
     "Therefore, developing critical thinking skills regarding digital privacy has become an essential responsibility for high school students in the twenty-first century."
 )
 
-st.subheader("📝 貼入英文課文或教材文本")
-user_input = st.text_area(
-    "請在下方輸入英文文本（若留空將自動採用預設的高中預設範文進行診斷）：",
-    height=180,
-    value=default_sample
-)
+st.markdown("### 📝 教材文本輸入與批次分析")
 
-# 若使用者輸入為空，自動以預設文本替代
-active_text = user_input.strip() if user_input.strip() else default_sample
+input_tab1, input_tab2 = st.tabs(["✍️ 單篇文本分析", "📁 批次檔案上傳 (.txt)"])
 
-# 送出分析按鈕
-analyze_btn = st.button("🚀 開始多維度診斷與分析", type="primary", use_container_width=True)
+active_text = ""
+file_name_label = "單篇文章"
+
+with input_tab1:
+    user_input = st.text_area(
+        "請貼入英文課文或教材（若未貼入，將自動以預設的高二範文進行診斷）：",
+        height=140, value=default_sample
+    )
+    cleaned_text = re.sub(r'([a-zA-Z0-9])\n([a-zA-Z0-9])', r'\1. \2', user_input.strip())
+    active_text = cleaned_text if cleaned_text else default_sample
+
+with input_tab2:
+    uploaded_files = st.file_uploader("上傳多個課文 .txt 檔案進行批次檢測", type=["txt"], accept_multiple_files=True)
+    if uploaded_files:
+        selected_file = st.selectbox("選擇要預覽與診斷的檔案：", options=[f.name for f in uploaded_files])
+        for f in uploaded_files:
+            if f.name == selected_file:
+                active_text = f.read().decode("utf-8")
+                file_name_label = f.name
+                break
+
+analyze_btn = st.button("🚀 開始多維度自動診斷", type="primary", use_container_width=True)
 
 # -----------------------------------------------------------------------------
-# 4. 核心診斷邏輯與視覺化呈現
+# 5. 核心運算與結果呈現
 # -----------------------------------------------------------------------------
 if analyze_btn or active_text:
-    # 調用雙軌句法引擎
     mdd_res = calculate_mdd_and_memory_load(active_text)
     l2sca_res = calculate_l2sca_approximations(active_text)
-
-    st.markdown("---")
     
-    # 頂部 Metric Cards (動態計算 Delta 差值)
+    # 覆蓋自訂超載判斷 (基於使用者設定的 mdd_threshold)
+    is_custom_overloaded = mdd_res["mdd"] >= mdd_threshold
+
+    # 自動記錄至歷史診斷數據 (Session Log)
+    log_entry = {
+        "檔名/篇名": file_name_label,
+        "MLS": l2sca_res["MLS"],
+        "CNP/C": l2sca_res["CNP/C"],
+        "MDD": mdd_res["mdd"],
+        "超載點數": len(mdd_res["overload_spans"])
+    }
+    if not any(d["檔名/篇名"] == file_name_label and d["MDD"] == mdd_res["mdd"] for d in st.session_state.history):
+        st.session_state.history.append(log_entry)
+
+    st.markdown("<br>", unsafe_allow_html=True)
+    
+    # 頂部 Metric Cards
     col1, col2, col3, col4 = st.columns(4)
-    col1.metric(
-        "平均句子長度 (MLS)", 
-        l2sca_res["MLS"], 
-        delta=round(l2sca_res["MLS"] - current_norm["MLS"], 2)
-    )
-    col2.metric(
-        "複雜名詞片語 (CNP/C)", 
-        l2sca_res["CNP/C"], 
-        delta=round(l2sca_res["CNP/C"] - current_norm["CNP/C"], 2)
-    )
-    col3.metric(
-        "平均依存距離 (MDD)", 
-        mdd_res["mdd"], 
-        delta=round(mdd_res["mdd"] - current_norm["MDD_target"], 2), 
-        delta_color="inverse"
-    )
-    col4.metric(
-        "工作記憶超載點", 
-        f"{len(mdd_res['overload_spans'])} 處"
-    )
+    col1.metric("平均句子長度 (MLS)", l2sca_res["MLS"], delta=round(l2sca_res["MLS"] - current_norm["MLS"], 2))
+    col2.metric("複雜名詞片語 (CNP/C)", l2sca_res["CNP/C"], delta=round(l2sca_res["CNP/C"] - current_norm["CNP/C"], 2))
+    col3.metric("平均依存距離 (MDD)", mdd_res["mdd"], delta=round(mdd_res["mdd"] - current_norm["MDD_target"], 2), delta_color="inverse")
+    col4.metric("工作記憶超載點", f"{len(mdd_res['overload_spans'])} 處", delta=f"自訂門檻 MDD>{mdd_threshold}", delta_color="inverse")
 
     st.markdown("---")
 
-    # Khosravi et al. (2022) 三頁籤 XAI 介面
-    tab1, tab2, tab3 = st.tabs(["💡 為什麼 (Why)", "📊 如何計算 (How)", "🛠️ 改寫建議 (Recommendations)"])
+    # XAI 三頁籤 + 系統功能頁籤
+    tab1, tab2, tab3, tab4 = st.tabs([
+        "💡 為什麼 (Why)", 
+        "📊 如何計算與依存弧線 (How)", 
+        "🛠️ 三維度診斷與改寫建議 (Recommendations)",
+        "⚙️ 系統功能與報告匯出 (System Tools)"
+    ])
 
     # -------------------------------------------------------------------------
-    # TAB 1: 診斷理由與常模對照 (Why)
+    # TAB 1: 為什麼 (Why)
     # -------------------------------------------------------------------------
     with tab1:
-        st.subheader("🔍 診斷理由與常模對照")
-        st.info(f"📌 當前對照標竿：**{target_level}** (基準值：MLS={current_norm['MLS']}, CNP/C={current_norm['CNP/C']}, MDD={current_norm['MDD_target']})")
-        
-        col_a, col_b = st.columns(2)
-        with col_a:
-            st.markdown("### 句法與認知負荷評估")
-            if mdd_res["is_overloaded"]:
-                st.warning(f"⚠️ **認知加工負荷過高**：全篇 MDD 為 **{mdd_res['mdd']}**（超過安全閾值 3.0）。大腦在解讀長距離依存關係時容易產生工作記憶遲滯。")
+        st.markdown(f"#### 📌 當前標竿對照：**{target_level}** | 自訂 MDD 超載門檻：**{mdd_threshold}**")
+        c1, c2 = st.columns(2)
+        with c1:
+            st.markdown('<div class="custom-card">', unsafe_allow_html=True)
+            st.markdown("### 🌿 句法與認知負荷診斷")
+            if is_custom_overloaded:
+                st.markdown(f"""
+                <div class="warning-box">
+                    <strong>⚠️ 認知加工負荷偏高</strong><br>
+                    全篇 MDD 為 <strong>{mdd_res['mdd']}</strong>（已超過您設定的超載門檻 {mdd_threshold}）。<br>
+                    大腦在處理長距離依存關係時需要更多工作記憶。
+                </div>
+                """, unsafe_allow_html=True)
             else:
-                st.success(f"✅ **認知加工負荷適中**：全篇 MDD 為 **{mdd_res['mdd']}**，符合學習者工作記憶可承受範圍 (MDD < 3.0)。")
+                st.markdown(f"""
+                <div class="success-box">
+                    <strong>✅ 認知加工負荷適中</strong><br>
+                    全篇 MDD 為 <strong>{mdd_res['mdd']}</strong>，低於自訂超載門檻 ({mdd_threshold})。
+                </div>
+                """, unsafe_allow_html=True)
+            st.markdown('</div>', unsafe_allow_html=True)
 
-        with col_b:
-            st.markdown("### 片語凝聚度 (Phrasal Style) 評估")
+        with c2:
+            st.markdown('<div class="custom-card">', unsafe_allow_html=True)
+            st.markdown("### 🔤 片語凝聚度 (Phrasal Style) 診斷")
             if l2sca_res["CNP/C"] < current_norm["CNP/C"]:
-                st.warning(f"ℹ️ **片語凝聚度提醒**：當前文本 CNP/C 為 **{l2sca_res['CNP/C']}**，低於標竿值 ({current_norm['CNP/C']})。若目標為銜接該語體，建議增加名詞片語後置修飾。")
+                st.markdown(f"""
+                <div class="warning-box">
+                    <strong>ℹ️ 片語凝聚度提醒</strong><br>
+                    當前文本 CNP/C 為 <strong>{l2sca_res['CNP/C']}</strong>，低於標竿值 ({current_norm['CNP/C']})。<br>
+                    建議增加名詞片語後置修飾語（Noun Post-modifiers）。
+                </div>
+                """, unsafe_allow_html=True)
             else:
-                st.success(f"✅ **片語凝聚度達標**：CNP/C 為 **{l2sca_res['CNP/C']}**，高於或平於標竿值 ({current_norm['CNP/C']})。")
+                st.markdown(f"""
+                <div class="success-box">
+                    <strong>✅ 片語凝聚度達標</strong><br>
+                    CNP/C 為 <strong>{l2sca_res['CNP/C']}</strong>，達到標竿標準 ({current_norm['CNP/C']})。
+                </div>
+                """, unsafe_allow_html=True)
+            st.markdown('</div>', unsafe_allow_html=True)
 
     # -------------------------------------------------------------------------
-    # TAB 2: 如何計算 (How) - 包含句法與篇章依存特質 (DDS)
+    # TAB 2: 如何計算 (How) - 包含帶箭頭的依存句法圖
     # -------------------------------------------------------------------------
     with tab2:
-        st.subheader("📊 多維度結構與指標分析")
-        
-        t2_col1, t2_col2 = st.columns(2)
-        
-        with t2_col1:
-            st.markdown("#### 1. 句法指標 vs. 標竿常模對比")
+        st.markdown("### 📊 指標對比與依存語法樹 (Dependency Arc Diagram)")
+        t2_c1, t2_c2 = st.columns([1, 1])
+        with t2_c1:
+            st.markdown("#### 1. 當前數值 vs. 標竿數值對比")
             fig = go.Figure(data=[
-                go.Bar(name='當前文本', x=['MLS (句長)', 'CNP/C (名詞組)', 'MDD (依存距離)'], y=[l2sca_res['MLS'], l2sca_res['CNP/C'], mdd_res['mdd']], marker_color='#1f77b4'),
-                go.Bar(name=f'標竿 ({target_level.split()[0]})', x=['MLS (句長)', 'CNP/C (名詞組)', 'MDD (依存距離)'], y=[current_norm['MLS'], current_norm['CNP/C'], current_norm['MDD_target']], marker_color='#ff7f0e')
-            ])
-            fig.update_layout(barmode='group', height=350, margin=dict(l=20, r=20, t=30, b=20))
-            st.plotly_chart(fig, use_container_width=True)
-
-        with t2_col2:
-            st.markdown("#### 2. 篇章依存特質 (Discourse Dependency Structure)")
-            # 模擬估計 DDS 特徵 (基於 Cheng et al. 2021)
-            estimated_edus = max(int(l2sca_res['MLS'] * 0.4), 3)
-            st.write(f"• **預估基本語篇單位 (EDUs 數量)**: 約 **{estimated_edus * 4}** 個 EDUs")
-            st.write(f"• **篇章樹狀深度 (Discourse Depth)**: 平均 2.8 層")
-            st.write(f"• **主從修辭關係比例 (Subordinate Ratio)**: {l2sca_res['DC/C'] * 100:.1f}%")
-            
-            # DDS 篇章修辭關係分佈圖
-            dds_labels = ['Explanation (解釋)', 'Causality (因果)', 'Parallel (並列)', 'Elaboration (補充)']
-            dds_values = [35, 25, 20, 20]
-            fig_dds = px.pie(names=dds_labels, values=dds_values, title="篇章修辭關係 (Discourse Relations) 估算分佈", height=280)
-            fig_dds.update_traces(textposition='inside', textinfo='percent+label')
-            st.plotly_chart(fig_dds, use_container_width=True)
-
-   # -------------------------------------------------------------------------
-    # TAB 3: 改寫建議 - 分為字彙、句法、語篇三部分 (Bug Fixed Version)
-    # -------------------------------------------------------------------------
-    with tab3:
-        st.subheader("🛠️ 三維度自動化診斷與自適應改寫建議")
-        
-        # --- PART A: 句法層級 (含完整句子與單字高亮) ---
-        st.markdown("### 🌿 一、 句法層級診斷 (Syntactic Level & Memory Load)")
-        
-        if mdd_res["overload_spans"]:
-            st.error(f"🚨 檢測到 **{len(mdd_res['overload_spans'])}** 處大腦工作記憶超載點 (Cowan 4-chunk 超載臨界點)：")
-            
-            # 使用 spaCy 重新取得正確的句子列表
-            nlp = spacy.load("en_core_web_sm")
-            doc = nlp(active_text)
-            sentences = [sent.text.strip() for sent in doc.sents if sent.text.strip()]
-            
-            for idx, item in enumerate(mdd_res["overload_spans"]):
-                sent_id = item["sentence_id"]
-                target_word = item["word"]
-                
-                # 取得問題詞對應的完整句子
-                if 1 <= sent_id <= len(sentences):
-                    raw_sentence = sentences[sent_id - 1]
-                    
-                    # 使用 HTML/CSS 安全地高亮目標詞（避免破壞原句格式）
-                    import re
-                    # 使用邊界 matching (\b) 確保只高亮完整的目標單字，不影響包含該字串的其他單字
-                    pattern = re.compile(rf'\b({re.escape(target_word)})\b', re.IGNORECASE)
-                    highlighted_sentence = pattern.sub(
-                        r"<mark style='background-color: #ffe066; color: #d9480f; font-weight: bold; padding: 2px 6px; border-radius: 4px;'>\1</mark>", 
-                        raw_sentence
-                    )
-                else:
-                    highlighted_sentence = active_text  # Fallback 保底呈現
-
-                with st.expander(f"📍 **超載位置 {idx+1}**：第 {sent_id} 句 (問題詞: `{target_word}`)", expanded=True):
-                    st.markdown("**【完整句子內容】**：", unsafe_allow_html=True)
-                    # 渲染高亮後的完整句子
-                    st.markdown(
-                        f"<div style='background-color: #f8f9fa; color: #212529; padding: 14px; border-left: 5px solid #fcc419; margin-bottom: 12px; font-size: 16px; line-height: 1.6; border-radius: 4px;'>{highlighted_sentence}</div>", 
-                        unsafe_allow_html=True
-                    )
-                    st.write(f"ℹ️ **超載原因**：{item['msg']}")
-                    st.markdown("👉 **句法改寫建議**：此處因前置/後置修飾語過長，導致該詞上空有超過 4 條跨越依存弧。建議將長介詞組 (PP) 或關係子句**拆分為兩個獨立小句**，或將修飾語前移。")
-        else:
-            st.success("🎉 **句法結構順暢**：未發現顯著的語意/語法超載結構，依存距離符合標準！")
-
-        st.markdown("---")
-
-        # --- PART B: 字彙層級 ---
-        st.markdown("### 🔤 二、 字彙層級診斷 (Lexical Level)")
-        col_l1, col_l2 = st.columns(2)
-        with col_l1:
-            st.markdown("**現狀分析**")
-            st.write("• **預估詞彙密度 (LD)**: 54.2% (符合高中標準)")
-            st.write("• **學術詞彙 (AWL) 覆蓋率**: 約 8.5%")
-        with col_l2:
-            st.markdown("**字彙替換與優化建議**")
-            if l2sca_res["CNP/C"] < current_norm["CNP/C"]:
-                st.info("💡 **建議適度升級字彙與名詞組**：可將一般動詞或形容詞改寫為名詞化結構 (Nominalization)。例如：*reflect personal habits* $\rightarrow$ *be a reflection of personal habits*。")
-            else:
-                st.success("✅ **字彙難易度適中**：詞彙豐富度符合該標竿階梯設定。")
-
-        st.markdown("---")
-
-        # --- PART C: 語篇層級 ---
-        st.markdown("### 📑 三、 語篇層級診斷 (Discourse Level)")
-        st.markdown("**篇章邏輯與連貫性建議 (DDS Framework)**")
-        st.write("• **邏輯轉折詞 (Discourse Markers)**：文中成功使用 *Furthermore*, *Therefore* 等轉折詞，主從與因果邏輯清晰。")
-        st.write("• **連貫性優化提示**：段落間由 *social media platforms* 銜接至 *digital literacy*，過渡自然。建議在第三段開頭增加標示「對比」或「條件」的 EDUs 句型，以進一步豐富篇章修辭結構。")
+                go.Bar(name='當前文本', x=['MLS (句長)', 'CNP/C (名詞組)', 'MDD (依存距離)'], y=[l2sca_res['MLS'], l2sca_res['CNP/C'], mdd_res['mdd']], marker_color='#3b82f6'),
+                go.Bar(name=f'標竿 ({target_level.split()[0]})', x=['MLS (句長)', 'CNP/C (名詞组)', 'MDD (依存距離)'], y=[current_norm['MLS'], current_norm['CNP/C'], current_norm
