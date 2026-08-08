@@ -4,7 +4,7 @@ from core.syntactic_engine import calculate_mdd_and_memory_load, calculate_l2sca
 
 st.set_page_config(page_title="TW-EFL MDTCD 診斷系統", layout="wide")
 
-st.title("🇹🇼 台灣中小學英語教材多維度複雜度自動化診斷系統 (MDTCD)")
+st.title("🇹🇼 台灣英語教材多維度複雜度自動化診斷系統 (MDTCD)")
 
 # 常模對照資料庫 (對齊 Ting 2024 實證數據)
 NORMS = {
