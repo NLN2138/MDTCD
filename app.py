@@ -159,39 +159,49 @@ if analyze_btn or active_text:
             fig_dds.update_traces(textposition='inside', textinfo='percent+label')
             st.plotly_chart(fig_dds, use_container_width=True)
 
-    # -------------------------------------------------------------------------
-    # TAB 3: 改寫建議 - 分為字彙、句法、語篇三部分
+   # -------------------------------------------------------------------------
+    # TAB 3: 改寫建議 - 分為字彙、句法、語篇三部分 (Bug Fixed Version)
     # -------------------------------------------------------------------------
     with tab3:
         st.subheader("🛠️ 三維度自動化診斷與自適應改寫建議")
         
         # --- PART A: 句法層級 (含完整句子與單字高亮) ---
         st.markdown("### 🌿 一、 句法層級診斷 (Syntactic Level & Memory Load)")
+        
         if mdd_res["overload_spans"]:
             st.error(f"🚨 檢測到 **{len(mdd_res['overload_spans'])}** 處大腦工作記憶超載點 (Cowan 4-chunk 超載臨界點)：")
             
-            # 載入 spaCy 模型以取得完整句子
+            # 使用 spaCy 重新取得正確的句子列表
             nlp = spacy.load("en_core_web_sm")
             doc = nlp(active_text)
-            sentences = list(doc.sents)
+            sentences = [sent.text.strip() for sent in doc.sents if sent.text.strip()]
             
             for idx, item in enumerate(mdd_res["overload_spans"]):
                 sent_id = item["sentence_id"]
                 target_word = item["word"]
                 
-                # 取得完整句子文字
-                if sent_id <= len(sentences):
-                    full_sentence = sentences[sent_id - 1].text
-                    # 以 HTML 黃色標籤高亮問題單字
-                    highlighted_sentence = full_sentence.replace(
-                        target_word, f"<span style='background-color: #ffe066; color: #d9480f; font-weight: bold; padding: 2px 6px; border-radius: 4px;'>{target_word}</span>"
+                # 取得問題詞對應的完整句子
+                if 1 <= sent_id <= len(sentences):
+                    raw_sentence = sentences[sent_id - 1]
+                    
+                    # 使用 HTML/CSS 安全地高亮目標詞（避免破壞原句格式）
+                    import re
+                    # 使用邊界 matching (\b) 確保只高亮完整的目標單字，不影響包含該字串的其他單字
+                    pattern = re.compile(rf'\b({re.escape(target_word)})\b', re.IGNORECASE)
+                    highlighted_sentence = pattern.sub(
+                        r"<mark style='background-color: #ffe066; color: #d9480f; font-weight: bold; padding: 2px 6px; border-radius: 4px;'>\1</mark>", 
+                        raw_sentence
                     )
                 else:
-                    highlighted_sentence = "無法載入完整句子。"
+                    highlighted_sentence = active_text  # Fallback 保底呈現
 
-                with st.expander(f"📍 **超載位置 {idx+1}**：第 {sent_id} 句 (問題詞: {target_word})", expanded=True):
-                    st.markdown(f"**【完整句子】**：", unsafe_allow_html=True)
-                    st.markdown(f"<div style='background-color: #f8f9fa; padding: 12px; border-left: 4px solid #fcc419; margin-bottom: 10px;'>{highlighted_sentence}</div>", unsafe_allow_html=True)
+                with st.expander(f"📍 **超載位置 {idx+1}**：第 {sent_id} 句 (問題詞: `{target_word}`)", expanded=True):
+                    st.markdown("**【完整句子內容】**：", unsafe_allow_html=True)
+                    # 渲染高亮後的完整句子
+                    st.markdown(
+                        f"<div style='background-color: #f8f9fa; color: #212529; padding: 14px; border-left: 5px solid #fcc419; margin-bottom: 12px; font-size: 16px; line-height: 1.6; border-radius: 4px;'>{highlighted_sentence}</div>", 
+                        unsafe_allow_html=True
+                    )
                     st.write(f"ℹ️ **超載原因**：{item['msg']}")
                     st.markdown("👉 **句法改寫建議**：此處因前置/後置修飾語過長，導致該詞上空有超過 4 條跨越依存弧。建議將長介詞組 (PP) 或關係子句**拆分為兩個獨立小句**，或將修飾語前移。")
         else:
@@ -204,9 +214,9 @@ if analyze_btn or active_text:
         col_l1, col_l2 = st.columns(2)
         with col_l1:
             st.markdown("**現狀分析**")
-            st.write(f"• **預估詞彙密度 (LD)**: 54.2% (符合高中標準)")
-            st.write(f"• **學術詞彙 (AWL) 覆蓋率**: 約 8.5%")
-        with col_b:
+            st.write("• **預估詞彙密度 (LD)**: 54.2% (符合高中標準)")
+            st.write("• **學術詞彙 (AWL) 覆蓋率**: 約 8.5%")
+        with col_l2:
             st.markdown("**字彙替換與優化建議**")
             if l2sca_res["CNP/C"] < current_norm["CNP/C"]:
                 st.info("💡 **建議適度升級字彙與名詞組**：可將一般動詞或形容詞改寫為名詞化結構 (Nominalization)。例如：*reflect personal habits* $\rightarrow$ *be a reflection of personal habits*。")
