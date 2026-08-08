@@ -61,7 +61,7 @@ if user_text.strip():
     st.markdown("---")
 
     # Khosravi et al. (2022) 三頁籤 XAI 介面
-    tab1, tab2, tab3 = st.tabs(["💡 頁籤一：為什麼 (Why)", "📊 頁籤二：如何計算 (How)", "🛠️ 頁籤三：改寫建議 (Recommendations)"])
+    tab1, tab2, tab3 = st.tabs(["💡 為什麼 (Why)", "📊 如何計算 (How)", "🛠️ 改寫建議 (Recommendations)"])
 
     with tab1:
         st.subheader("診斷理由與常模對照")
