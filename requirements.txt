@@ -4,3 +4,6 @@ pandas>=2.0.0
 plotly>=5.18.0
 torch>=2.0.0
 transformers>=4.35.0
+
+# 直接從 Official Release 安裝 en_core_web_sm 模型
+https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.7.1/en_core_web_sm-3.7.1-py3-none-any.whl
