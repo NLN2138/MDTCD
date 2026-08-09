@@ -370,4 +370,88 @@ with col_work:
 
                         st.markdown(f"##### 2️⃣ 依存樹圖分析 (視覺化跨越弧)")
                         if target_sent_obj:
-                            with st
+                            with st.expander("👁️ 點擊展開該句之有方向拋物線依存樹圖", expanded=False):
+                                svg_html = displacy.render(target_sent_obj, style="dep", options={"compact": False, "distance": 120, "bg": "#ffffff"}, page=False)
+                                st.components.v1.html(f"<div style='overflow-x: auto; background-color: #ffffff; padding: 15px; border: 1px solid #e2e8f0; border-radius: 8px;'>{svg_html}</div>", height=400, scrolling=True)
+                        else:
+                            st.write("無法產生對應的依存樹圖。")
+
+                        st.markdown("<hr style='margin: 1rem 0; border: none; border-top: 1px dashed #cbd5e1;'>", unsafe_allow_html=True)
+                        
+                        st.markdown(f"##### 3️⃣ AI 助教針對性改寫")
+                        ai_key = f"ai_result_{idx}"
+                        if ai_key not in st.session_state:
+                            st.session_state[ai_key] = None
+
+                        if st.button(f"🤖 點擊獲取教師級英文改寫範例", key=f"ai_btn_{idx}"):
+                            with st.spinner("中小學英語教師 AI 正在為您重構低負荷英文句子..."):
+                                st.session_state[ai_key] = call_openai_rewriter(raw_sentence, target_word, cross_count)
+
+                        if st.session_state[ai_key]:
+                            st.info(st.session_state[ai_key])
+                
+                if total_overloads > 3:
+                    st.caption(f"*(註：當前文本共有 {total_overloads} 處瓶頸點，基於成本與防濫用原則，僅展示前 3 筆 AI 降載通道)*")
+            else:
+                st.markdown("""<div class="msg-box success-box">🎉 <strong>句法結構順暢</strong>：未發現任何「跨越弧線數」超標的工作記憶瓶頸點！</div>""", unsafe_allow_html=True)
+
+            # 三、 語篇層級
+            disc_found_str = ", ".join([f"<em>{m['marker']}</em>" for m in disc_res["found_markers"][:5]]) or "無"
+
+            if disc_res["discourse_density"] < current_norm["DCD"]:
+                disc_advice = f"""<div class="msg-box info-box" style="margin-bottom:0;">💡 <strong>優化建議</strong>：文章句與句之間的邏輯轉折較為隱晦。建議在段落推論處補強因果詞 (如 <em>Therefore, Consequently</em>) 或對比詞 (如 <em>However, In contrast</em>)，以引導學生理解篇章脈絡。</div>"""
+            else:
+                disc_advice = f"""<div class="msg-box success-box" style="margin-bottom:0;">✅ <strong>篇章銜接性極佳</strong>：使用了豐富的邏輯詞彙，文氣連貫。</div>"""
+
+            disc_html = textwrap.dedent(f"""
+            <div class="custom-card" style="margin-top: 1.5rem;">
+                <h4 style="margin-top: 0; color: #1e293b; margin-bottom: 1rem;">📑 三、 語篇層級改寫建議</h4>
+                <p style="margin-bottom: 0.8rem; color: #334155; line-height: 1.8;">
+                    • <strong>偵測到之銜接詞</strong>：{disc_found_str} 等<br>
+                    • <strong>每百字密度 (DCD)</strong>：{disc_res['discourse_density']} % (標竿為 {current_norm['DCD']} %)
+                </p>
+                {disc_advice}
+            </div>
+            """)
+            st.markdown(disc_html, unsafe_allow_html=True)
+
+        # ==========================================
+        # TAB 4: 系統功能 (全標竿綜合評比)
+        # ==========================================
+        with tab4:
+            st.markdown('<div class="custom-card">', unsafe_allow_html=True)
+            st.markdown("### 📥 1. 下載自動化診斷報告")
+            report_md = f"""# MDTCD 教材複雜度診斷報告\n- **分析時間**: {current_time}\n- **標竿年級**: {target_level}\n- **平均句長 (MLS)**: {l2sca_res['MLS']}\n- **複雜名詞組 (CNP/C)**: {l2sca_res['CNP/C']}\n- **平均依存距離 (MDD)**: {mdd_res['mdd']}\n- **邏輯詞密度 (DCD)**: {disc_res['discourse_density']}%\n- **超載瓶頸點數量**: {len(mdd_res['overload_spans'])}"""
+            st.download_button("📄 下載 Markdown 診斷報告 (.md)", data=report_md, file_name=f"MDTCD_Report.md", mime="text/markdown")
+            st.markdown('</div>', unsafe_allow_html=True)
+
+            st.markdown('<div class="custom-card">', unsafe_allow_html=True)
+            st.markdown("### 📜 2. 📝 當前文本 vs. 所有基準標竿對照表")
+            
+            # 動態建立全標竿比較表
+            comparison_data = []
+            
+            # 第一列放「當前輸入文本」
+            comparison_data.append({
+                "類別 (Category)": "🎯 當前輸入文本 (Current)",
+                "平均句長 (MLS)": l2sca_res["MLS"],
+                "複雜名詞組 (CNP/C)": l2sca_res["CNP/C"],
+                "依存距離 (MDD)": mdd_res["mdd"],
+                "語篇銜接密度 (DCD %)": disc_res["discourse_density"]
+            })
+            
+            # 接著列出所有內建標竿
+            for norm_name, norm_vals in NORMS.items():
+                comparison_data.append({
+                    "類別 (Category)": f"📊 {norm_name}",
+                    "平均句長 (MLS)": norm_vals["MLS"],
+                    "複雜名詞組 (CNP/C)": norm_vals["CNP/C"],
+                    "依存距離 (MDD)": norm_vals["MDD_target"],
+                    "語篇銜接密度 (DCD %)": norm_vals["DCD"]
+                })
+                
+            comp_df = pd.DataFrame(comparison_data)
+            
+            # 顯示表格並隱藏預設索引
+            st.dataframe(comp_df, use_container_width=True, hide_index=True)
+            st.markdown('</div>', unsafe_allow_html=True)
