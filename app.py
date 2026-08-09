@@ -27,7 +27,7 @@ if not api_key:
 client = OpenAI(api_key=api_key) if api_key else None
 
 # -----------------------------------------------------------------------------
-# 1. 載入核心計算模組 (請確保 core/syntactic_engine.py 已經更新為上一輪的最新版)
+# 1. 載入核心計算模組
 # -----------------------------------------------------------------------------
 from core.syntactic_engine import (
     calculate_mdd_and_memory_load, 
@@ -55,7 +55,7 @@ if "history" not in st.session_state:
     st.session_state.history = []
 
 # -----------------------------------------------------------------------------
-# 3. 全局 CSS 樣式 (雙重固定：頂部與左側)
+# 3. 全局 CSS 樣式
 # -----------------------------------------------------------------------------
 st.markdown("""
 <style>
@@ -93,7 +93,7 @@ st.markdown("""
     .success-box { background-color: #f0fdf4; border-left: 5px solid #22c55e; color: #166534; }
     .info-box { background-color: #eff6ff; border-left: 5px solid #3b82f6; color: #1e3a8a; }
 
-    /* 2. 左側系統區固定 (Sticky) */
+    /* 左側固定 */
     [data-testid="column"]:first-of-type {
         position: -webkit-sticky;
         position: sticky;
@@ -102,12 +102,7 @@ st.markdown("""
         overflow-y: auto; 
         padding-right: 1rem;
     }
-    
-    /* 隱藏左側區域的捲軸 */
-    [data-testid="column"]:first-of-type::-webkit-scrollbar {
-        width: 0px;
-        background: transparent;
-    }
+    [data-testid="column"]:first-of-type::-webkit-scrollbar { width: 0px; background: transparent; }
 </style>
 
 <div class="fixed-header">
@@ -128,19 +123,20 @@ NORMS = {
 # -----------------------------------------------------------------------------
 # 5. OpenAI 智慧改寫函式
 # -----------------------------------------------------------------------------
-def call_openai_rewriter(overloaded_sentence, target_word):
+def call_openai_rewriter(overloaded_sentence, target_word, cross_count):
     if not client:
         return "⚠️ 尚未設定 OpenAI API Key。請透過 .env 檔案或 Streamlit Secrets 設定 OPENAI_API_KEY。"
     
     prompt = f"""
     You are an experienced EFL (English as a Foreign Language) junior and senior high school English teacher and corpus linguist in Taiwan. 
-    The following sentence has a high dependency distance (MDD) and causes working memory overload around the word '{target_word}':
-    "{overloaded_sentence}"
+    In the following sentence, the word '{target_word}' is structurally overloaded. There are {cross_count} syntactic dependency arcs crossing over it simultaneously, which creates a high storage cost and working memory bottleneck for readers.
+    
+    Sentence: "{overloaded_sentence}"
     
     Please provide actual, ready-to-use **English rewritten sentences** suitable for Taiwanese high school students, along with brief explanations in Traditional Chinese (台灣繁體中文):
     
     1. **拆句建議 (Split Option)**: 
-       - 提供改寫後的**實際英文句子**（將長句拆為兩個簡短的獨立小句，降低依存距離）。
+       - 提供改寫後的**實際英文句子**（將長句拆為兩個簡短的獨立小句，消除跨越弧線）。
        - 附帶對應的中文翻譯。
     
     2. **結構簡化 (Phrasal Option)**: 
@@ -172,7 +168,11 @@ with col_sys:
     current_norm = NORMS[target_level]
     
     st.markdown("<hr style='margin: 1rem 0;'>", unsafe_allow_html=True)
-    mdd_threshold = st.slider("🚨 MDD 超載臨界值", min_value=1.5, max_value=4.5, value=3.0, step=0.1)
+    mdd_threshold = st.slider("🚨 全篇 MDD 超載臨界值", min_value=1.5, max_value=4.5, value=3.0, step=0.1)
+    
+    # 這裡將決定有幾條線跨越才發出單句改寫警報
+    arcs_threshold = st.slider("🧠 跨越弧(Storage Cost) 超載門檻", min_value=2, max_value=7, value=4, step=1, 
+                               help="基於 DLT 依存局部性理論：單字上方若同時跨越多條語法弧線，大腦儲存成本將急遽上升。")
     
     st.markdown("<hr style='margin: 1rem 0;'>", unsafe_allow_html=True)
     st.markdown("#### 📊 當前對照基準")
@@ -196,16 +196,13 @@ with col_work:
     analyze_btn = st.button("🚀 開始多維度自動診斷", type="primary", use_container_width=True)
 
     if analyze_btn or active_text:
-        # 動態計算核心指標
-        mdd_res = calculate_mdd_and_memory_load(active_text)
+        # 動態計算核心指標：傳入 arcs_threshold 抓取跨越弧
+        mdd_res = calculate_mdd_and_memory_load(active_text, arcs_threshold=arcs_threshold)
         l2sca_res = calculate_l2sca_approximations(active_text)
         disc_res = analyze_discourse_markers(active_text)
         
         is_custom_overloaded = mdd_res["mdd"] >= mdd_threshold
 
-        # -------------------------------------------------------------
-        # 修正的 History 紀錄邏輯：確保切換標竿時也會正確寫入
-        # -------------------------------------------------------------
         current_time = datetime.now().strftime("%H:%M:%S")
         log_entry = {
             "時間": current_time,
@@ -220,7 +217,6 @@ with col_work:
             st.session_state.history.append(log_entry)
         else:
             last_log = st.session_state.history[-1]
-            # 只有當「標竿」與「所有數值」都一模一樣時才不寫入，否則寫入新紀錄
             if not (last_log["標竿"] == target_level and 
                     last_log["MDD"] == mdd_res["mdd"] and 
                     last_log["DCD"] == disc_res["discourse_density"] and
@@ -234,7 +230,10 @@ with col_work:
         m1.metric("平均句子長度 (MLS)", l2sca_res["MLS"], delta=round(l2sca_res["MLS"] - current_norm["MLS"], 2))
         m2.metric("複雜名詞片語 (CNP/C)", l2sca_res["CNP/C"], delta=round(l2sca_res["CNP/C"] - current_norm["CNP/C"], 2))
         m3.metric("平均依存距離 (MDD)", mdd_res["mdd"], delta=round(mdd_res["mdd"] - current_norm["MDD_target"], 2), delta_color="inverse")
-        m4.metric("語篇邏輯密度 (DCD)", f"{disc_res['discourse_density']} %", delta=round(disc_res['discourse_density'] - current_norm["DCD"], 2))
+        
+        # 變更第 4 指標：顯示抓出幾個大腦瓶頸點
+        overload_count = len(mdd_res['overload_spans'])
+        m4.metric("跨越弧超載瓶頸點", f"{overload_count} 處", delta=f"超過 {arcs_threshold} 條", delta_color="inverse")
 
         st.markdown("<br>", unsafe_allow_html=True)
 
@@ -255,9 +254,9 @@ with col_work:
 
             # 2. 句法
             if is_custom_overloaded:
-                syn_msg = f"""<div class="msg-box error-box"><strong>🚨 認知加工負荷超載</strong><br>全篇 MDD 為 <strong>{mdd_res['mdd']}</strong>（超過門檻 {mdd_threshold}）。大腦在處理長距離依存關係時容易產生工作記憶遲滯。</div>"""
+                syn_msg = f"""<div class="msg-box error-box"><strong>🚨 全篇認知加工負荷偏高</strong><br>全篇 MDD 為 <strong>{mdd_res['mdd']}</strong>（超過門檻 {mdd_threshold}）。這代表文章整體而言充滿長距離結構。</div>"""
             else:
-                syn_msg = f"""<div class="msg-box success-box"><strong>✅ 認知加工負荷適中</strong><br>全篇 MDD 為 <strong>{mdd_res['mdd']}</strong>，低於超載門檻 ({mdd_threshold})。</div>"""
+                syn_msg = f"""<div class="msg-box success-box"><strong>✅ 全篇認知加工負荷適中</strong><br>全篇 MDD 為 <strong>{mdd_res['mdd']}</strong>，低於警示門檻 ({mdd_threshold})。</div>"""
             st.markdown(f"""<div class="custom-card"><h4 style="margin-top:0; margin-bottom: 0.8rem; color:#1e293b;">🌿 二、 句法與認知負荷診斷</h4>{syn_msg}</div>""", unsafe_allow_html=True)
             
             # 3. 篇章
@@ -265,7 +264,6 @@ with col_work:
                 disc_msg = f"""<div class="msg-box info-box"><strong>ℹ️ 邏輯銜接密度較低</strong><br>當前每百字邏輯銜接詞為 <strong>{disc_res['discourse_density']} 個</strong>，低於標竿 ({current_norm['DCD']} 個)。建議補強因果或轉折連接詞以提升流暢度。</div>"""
             else:
                 disc_msg = f"""<div class="msg-box success-box"><strong>✅ 語篇連貫度良好</strong><br>當前每百字邏輯銜接詞為 <strong>{disc_res['discourse_density']} 個</strong>，已達到或超過標竿 ({current_norm['DCD']} 個)。共偵測到 {disc_res['total_markers']} 個銜接標記。</div>"""
-                
             st.markdown(f"""<div class="custom-card"><h4 style="margin-top:0; margin-bottom: 0.8rem; color:#1e293b;">📑 三、 語篇邏輯連貫度診斷</h4>{disc_msg}</div>""", unsafe_allow_html=True)
 
         # ==========================================
@@ -292,44 +290,30 @@ with col_work:
 
             fig = go.Figure(data=[
                 go.Bar(
-                    name='當前文本分析值', 
-                    x=categories, 
-                    y=current_values, 
-                    text=current_values,
-                    textposition='auto',
-                    marker_color='#1d4ed8'
+                    name='當前文本分析值', x=categories, y=current_values, 
+                    text=current_values, textposition='auto', marker_color='#1d4ed8'
                 ),
                 go.Bar(
-                    name=f'標竿對照值 ({target_level.split()[0]})', 
-                    x=categories, 
-                    y=norm_values, 
-                    text=norm_values,
-                    textposition='auto',
-                    marker_color='#f59e0b'
+                    name=f'標竿對照值 ({target_level.split()[0]})', x=categories, y=norm_values, 
+                    text=norm_values, textposition='auto', marker_color='#f59e0b'
                 )
             ])
             
             fig.update_layout(
-                barmode='group', 
-                height=420, 
-                margin=dict(l=20, r=20, t=30, b=20),
-                yaxis_title="指標數值",
-                legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
+                barmode='group', height=420, margin=dict(l=20, r=20, t=30, b=20),
+                yaxis_title="指標數值", legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
             )
             st.plotly_chart(fig, use_container_width=True)
 
             st.markdown("<hr>", unsafe_allow_html=True)
 
-            # 篇章邏輯詞詳細解析表
             st.markdown("### 2. 📑 篇章邏輯銜接詞成分統計")
             col_d1, col_d2 = st.columns([1, 1])
-            
             with col_d1:
                 df_cat = pd.DataFrame(list(disc_res["category_counts"].items()), columns=["邏輯類別", "出現次數"])
                 fig_cat = px.bar(df_cat, x="邏輯類別", y="出現次數", color="邏輯類別", title="語篇標記分類分布")
                 fig_cat.update_layout(showlegend=False, height=300)
                 st.plotly_chart(fig_cat, use_container_width=True)
-                
             with col_d2:
                 st.markdown("**🔍 本文偵測到的邏輯銜接詞：**")
                 if disc_res["found_markers"]:
@@ -343,7 +327,7 @@ with col_work:
 
             st.markdown("### 3. 🎯 句法依存樹弧線圖 (Dependency Visualizer)")
             with st.expander("👁️ 點擊展開 / 收合句法依存樹狀圖 (預設為第一句)", expanded=False):
-                st.caption("展示帶方向的拋物線依存結構。弧線越長，代表認知負載 (Dependency Distance) 越高。")
+                st.caption("展示帶方向的拋物線依存結構。弧線越長、跨越越密集，代表認知負載 (Storage Cost) 越高。")
                 doc = nlp(active_text)
                 first_sent = list(doc.sents)[0] if list(doc.sents) else doc
                 displacy_options = {"compact": False, "distance": 130, "word_spacing": 45, "color": "#1e293b", "bg": "#f8fafc", "font": "Arial"}
@@ -354,8 +338,6 @@ with col_work:
         # TAB 3: 診斷與改寫建議
         # ==========================================
         with tab3:
-            # 使用 textwrap.dedent 安全排版 HTML
-            
             # 一、 詞彙層級
             if l2sca_res["CNP/C"] < current_norm["CNP/C"]:
                 lex_advice = "<div class='msg-box info-box' style='margin-bottom:0;'>💡 <strong>優化建議</strong>：可將一般動詞改寫為名詞化結構 (Nominalization)，增加學術感與語句凝聚度。</div>"
@@ -373,12 +355,12 @@ with col_work:
             """)
             st.markdown(lex_html, unsafe_allow_html=True)
 
-            # 二、 句法層級
-            st.markdown("<h4 style='color: #1e293b; margin-top: 1.5rem; margin-bottom: 1rem;'>🌿 二、 句法層級改寫建議</h4>", unsafe_allow_html=True)
+            # 二、 句法層級 (依跨越弧線數定位)
+            st.markdown("<h4 style='color: #1e293b; margin-top: 1.5rem; margin-bottom: 1rem;'>🌿 二、 句法層級改寫建議（動態定位跨越弧瓶頸）</h4>", unsafe_allow_html=True)
             
             if mdd_res["overload_spans"]:
                 total_overloads = len(mdd_res['overload_spans'])
-                st.markdown(f"""<div class="msg-box error-box" style="margin-bottom: 1rem;"><strong>🚨 檢測到 {total_overloads} 處大腦工作記憶超載點</strong>（基於資源保護，系統限制每篇文章<strong>最多可使用 AI 索取 3 句</strong>實際改寫範例）：</div>""", unsafe_allow_html=True)
+                st.markdown(f"""<div class="msg-box error-box" style="margin-bottom: 1rem;"><strong>🚨 檢測到 {total_overloads} 處大腦工作記憶「儲存成本 (Storage Cost)」超載瓶頸</strong>（基於資源保護，系統限制每篇文章<strong>最多可使用 AI 索取 3 句</strong>實際改寫範例）：</div>""", unsafe_allow_html=True)
                 
                 doc = nlp(active_text)
                 sentences = [sent for sent in doc.sents if sent.text.strip()]
@@ -388,6 +370,7 @@ with col_work:
                 for idx, item in enumerate(limited_spans):
                     sent_id = item["sentence_id"]
                     target_word = item["word"]
+                    cross_count = item["cross_count"]
                     
                     if 1 <= sent_id <= len(sentences):
                         target_sent_obj = sentences[sent_id - 1]
@@ -398,16 +381,16 @@ with col_work:
                         target_sent_obj = None
                         highlighted_sentence = active_text
 
-                    with st.expander(f"📍 **超載位置 {idx+1} / {len(limited_spans)}**：第 {sent_id} 句 (問題詞: `{target_word}`)", expanded=False):
+                    with st.expander(f"📍 **瓶頸位置 {idx+1} / {len(limited_spans)}**：第 {sent_id} 句 (阻塞字: `{target_word}` / 跨越弧: {cross_count} 條)", expanded=False):
                         
-                        st.markdown(f"##### 1️⃣ 超載位置與基礎分析")
+                        st.markdown(f"##### 1️⃣ 瓶頸位置與基礎分析")
                         st.markdown(f"<div style='background-color: #f8fafc; color: #0f172a; padding: 16px; border-left: 5px solid #eab308; margin-bottom: 15px; font-size: 1.1rem; line-height: 1.6; border-radius: 6px;'>{highlighted_sentence}</div>", unsafe_allow_html=True)
-                        st.write(f"ℹ️ **超載原因**：{item['msg']}")
-                        st.write("👉 **基礎改寫提示**：此處修飾語過長，建議將長介詞組 (PP) 或關係子句拆分為兩個獨立小句。")
+                        st.write(f"ℹ️ **診斷原因**：{item['msg']}")
+                        st.write("👉 **自動改寫提示**：該字上方跨越過多未完成的語法關係，建議呼叫 AI 助教進行拆句或修飾語精簡。")
                         
                         st.markdown("<hr style='margin: 1rem 0; border: none; border-top: 1px dashed #cbd5e1;'>", unsafe_allow_html=True)
 
-                        st.markdown(f"##### 2️⃣ 依存樹圖分析")
+                        st.markdown(f"##### 2️⃣ 依存樹圖分析 (視覺化跨越弧)")
                         if target_sent_obj:
                             with st.expander("👁️ 點擊展開該句之有方向拋物線依存樹圖", expanded=False):
                                 svg_html = displacy.render(target_sent_obj, style="dep", options={"compact": False, "distance": 120, "bg": "#ffffff"}, page=False)
@@ -417,24 +400,24 @@ with col_work:
 
                         st.markdown("<hr style='margin: 1rem 0; border: none; border-top: 1px dashed #cbd5e1;'>", unsafe_allow_html=True)
                         
-                        st.markdown(f"##### 3️⃣ AI 助教改寫建議")
+                        st.markdown(f"##### 3️⃣ AI 助教針對性改寫")
                         ai_key = f"ai_result_{idx}"
                         if ai_key not in st.session_state:
                             st.session_state[ai_key] = None
 
                         if st.button(f"🤖 點擊獲取教師級英文改寫範例", key=f"ai_btn_{idx}"):
                             with st.spinner("中小學英語教師 AI 正在為您重構低負荷英文句子..."):
-                                st.session_state[ai_key] = call_openai_rewriter(raw_sentence, target_word)
+                                st.session_state[ai_key] = call_openai_rewriter(raw_sentence, target_word, cross_count)
 
                         if st.session_state[ai_key]:
                             st.info(st.session_state[ai_key])
                 
                 if total_overloads > 3:
-                    st.caption(f"*(註：當前文本共有 {total_overloads} 處超載點，基於成本與防濫用原則，僅展示前 3 筆 AI 降載通道)*")
+                    st.caption(f"*(註：當前文本共有 {total_overloads} 處瓶頸點，基於成本與防濫用原則，僅展示前 3 筆 AI 降載通道)*")
             else:
-                st.markdown("""<div class="msg-box success-box">🎉 <strong>句法結構順暢</strong>：未發現顯著的超載結構！</div>""", unsafe_allow_html=True)
+                st.markdown("""<div class="msg-box success-box">🎉 <strong>句法結構順暢</strong>：未發現任何「跨越弧線數」超標的工作記憶瓶頸點！</div>""", unsafe_allow_html=True)
 
-            # 三、 語篇層級 (安全排版 HTML)
+            # 三、 語篇層級
             disc_found_str = ", ".join([f"<em>{m['marker']}</em>" for m in disc_res["found_markers"][:5]]) or "無"
 
             if disc_res["discourse_density"] < current_norm["DCD"]:
@@ -460,14 +443,13 @@ with col_work:
         with tab4:
             st.markdown('<div class="custom-card">', unsafe_allow_html=True)
             st.markdown("### 📥 1. 下載自動化診斷報告")
-            report_md = f"""# MDTCD 教材複雜度診斷報告\n- **分析時間**: {current_time}\n- **標竿年級**: {target_level}\n- **平均句長 (MLS)**: {l2sca_res['MLS']}\n- **複雜名詞組 (CNP/C)**: {l2sca_res['CNP/C']}\n- **平均依存距離 (MDD)**: {mdd_res['mdd']}\n- **邏輯詞密度 (DCD)**: {disc_res['discourse_density']}%\n- **超載點數量**: {len(mdd_res['overload_spans'])}"""
+            report_md = f"""# MDTCD 教材複雜度診斷報告\n- **分析時間**: {current_time}\n- **標竿年級**: {target_level}\n- **平均句長 (MLS)**: {l2sca_res['MLS']}\n- **複雜名詞組 (CNP/C)**: {l2sca_res['CNP/C']}\n- **平均依存距離 (MDD)**: {mdd_res['mdd']}\n- **邏輯詞密度 (DCD)**: {disc_res['discourse_density']}%\n- **超載瓶頸點數量**: {len(mdd_res['overload_spans'])}"""
             st.download_button("📄 下載 Markdown 診斷報告 (.md)", data=report_md, file_name=f"MDTCD_Report.md", mime="text/markdown")
             st.markdown('</div>', unsafe_allow_html=True)
 
             st.markdown('<div class="custom-card">', unsafe_allow_html=True)
             st.markdown("### 📜 2. 本次 Session 歷程診斷比對表")
             if st.session_state.history:
-                # 將最新的歷程放在最上面
                 history_df = pd.DataFrame(reversed(st.session_state.history))
                 st.dataframe(history_df, use_container_width=True, height=300)
             st.markdown('</div>', unsafe_allow_html=True)
