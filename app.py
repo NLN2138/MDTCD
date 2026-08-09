@@ -47,7 +47,7 @@ if "history" not in st.session_state:
     st.session_state.history = []
 
 # -----------------------------------------------------------------------------
-# 2. 全局 CSS 樣式
+# 2. 全局 CSS 樣式 (雙重固定：頂部與左側)
 # -----------------------------------------------------------------------------
 st.markdown("""
 <style>
@@ -55,6 +55,7 @@ st.markdown("""
         font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif !important;
     }
     
+    /* 1. 頂部固定標題 */
     .fixed-header {
         position: fixed;
         top: 0; left: 0; width: 100vw; z-index: 999999;
@@ -77,24 +78,25 @@ st.markdown("""
         background-color: #f8fafc; padding: 10px 10px 0px 10px; border-bottom: 2px solid #e2e8f0; border-radius: 8px 8px 0 0;
     }
 
+    /* 卡片與提示框樣式 */
     .custom-card { background-color: #ffffff; border-radius: 12px; padding: 1.5rem; border: 1px solid #e2e8f0; margin-bottom: 1.5rem; box-shadow: 0 2px 4px rgba(0,0,0,0.02); }
-    
     .msg-box { padding: 1.2rem; border-radius: 8px; font-size: 1.05rem; line-height: 1.6; margin-bottom: 0; }
     .error-box { background-color: #fef2f2; border-left: 5px solid #ef4444; color: #991b1b; }
     .success-box { background-color: #f0fdf4; border-left: 5px solid #22c55e; color: #166534; }
     .info-box { background-color: #eff6ff; border-left: 5px solid #3b82f6; color: #1e3a8a; }
-    
-    /* 讓左側系統區固定 (Sticky) 的設定 */
-    [data-testid="column"]:first-child {
+
+    /* 2. 左側系統區固定 (Sticky) */
+    [data-testid="column"]:first-of-type {
+        position: -webkit-sticky;
         position: sticky;
-        top: 160px; 
-        height: calc(100vh - 180px); 
-        overflow-y: auto; 
+        top: 160px; /* 與頂部固定的 Header 保持距離 */
+        height: calc(100vh - 180px); /* 限制高度避免超出螢幕 */
+        overflow-y: auto; /* 若參數過多可獨立捲動 */
         padding-right: 1rem;
     }
     
-    /* 隱藏左側區域獨立捲動時的醜陋捲軸 */
-    [data-testid="column"]:first-child::-webkit-scrollbar {
+    /* 隱藏左側區域的捲軸 */
+    [data-testid="column"]:first-of-type::-webkit-scrollbar {
         width: 0px;
         background: transparent;
     }
@@ -149,14 +151,12 @@ def call_openai_rewriter(overloaded_sentence, target_word):
         return f"❌ AI 調用發生錯誤：{str(e)}"
 
 # =============================================================================
-# 3. 網格佈局 (系統區與作業區)
+# 3. 網格佈局 (左系統、右作業)
 # =============================================================================
 col_sys, col_work = st.columns([1, 3], gap="large")
 
-# --- 左側系統區 ---
 with col_sys:
     st.markdown("### ⚙️ 系統參數設定")
-    # 確保這些元件只會被建立一次！
     target_level = st.selectbox("🎯 選擇目標語體 / 標竿", options=list(NORMS.keys()), index=0)
     current_norm = NORMS[target_level]
     
@@ -168,7 +168,6 @@ with col_sys:
     st.markdown("#### 📊 當前對照基準")
     st.info(f"**平均句長 (MLS)**: {current_norm['MLS']}\n\n**複雜名詞組 (CNP/C)**: {current_norm['CNP/C']}\n\n**依存距離 (MDD)**: {current_norm['MDD_target']}")
 
-# --- 右側作業區 ---
 with col_work:
     default_sample = (
         "Title: The Digital Footprint of Modern Society.\n\n"
@@ -280,6 +279,7 @@ with col_work:
                 doc = nlp(active_text)
                 sentences = [sent for sent in doc.sents if sent.text.strip()]
                 
+                # 限制處理數量
                 limited_spans = mdd_res["overload_spans"][:3]
                 
                 for idx, item in enumerate(limited_spans):
@@ -322,7 +322,7 @@ with col_work:
                         if ai_key not in st.session_state:
                             st.session_state[ai_key] = None
 
-                        if st.button(f"🤖 點擊獲取教師級英文改寫範例 (位置 {idx+1})", key=f"ai_btn_{idx}"):
+                        if st.button(f"🤖 點擊獲取教師級英文改寫範例", key=f"ai_btn_{idx}"):
                             with st.spinner("中小學英語教師 AI 正在為您重構低負荷英文句子..."):
                                 st.session_state[ai_key] = call_openai_rewriter(raw_sentence, target_word)
 
