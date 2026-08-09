@@ -76,7 +76,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 NORMS = {
-    "高中五年級/高二 (Ting 2024)": {"MLS": 17.97, "CNP/C": 1.14, "MDD_target": 2.2},
+    "高二高三 (Ting 2024)": {"MLS": 17.97, "CNP/C": 1.14, "MDD_target": 2.2},
     "學測優秀作文 (GSAT)": {"MLS": 19.28, "CNP/C": 1.03, "MDD_target": 2.4},
     "真實學術論文 (RA)": {"MLS": 27.31, "CNP/C": 2.32, "MDD_target": 3.2}
 }
@@ -135,7 +135,7 @@ with col_work:
 
         st.markdown("<br>", unsafe_allow_html=True)
 
-        tab1, tab2, tab3, tab4 = st.tabs(["💡 為什麼 (Why)", "📊 如何計算 (How)", "🛠️ 診斷與改寫 (Recommendations)", "⚙️ 系統功能 (System)"])
+        tab1, tab2, tab3, tab4 = st.tabs(["💡 為什麼 (Why)", "📊 如何計算 (How)", "🛠️ 診斷與改寫 (Recommendations)", "⚙️ 下載報告 (Download)"])
 
         # ==========================================
         # TAB 1: 為什麼
