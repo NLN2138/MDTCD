@@ -6,6 +6,8 @@ from spacy import displacy
 import re
 import pandas as pd
 import os
+import textwrap
+from datetime import datetime
 from openai import OpenAI
 from dotenv import load_dotenv
 
@@ -25,7 +27,7 @@ if not api_key:
 client = OpenAI(api_key=api_key) if api_key else None
 
 # -----------------------------------------------------------------------------
-# 1. 載入核心計算模組 (請確保 core/syntactic_engine.py 存在)
+# 1. 載入核心計算模組 (請確保 core/syntactic_engine.py 已經更新為上一輪的最新版)
 # -----------------------------------------------------------------------------
 from core.syntactic_engine import (
     calculate_mdd_and_memory_load, 
@@ -115,7 +117,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # -----------------------------------------------------------------------------
-# 4. 標竿基準資料庫 (加入語篇 DCD 標竿)
+# 4. 標竿基準資料庫
 # -----------------------------------------------------------------------------
 NORMS = {
     "高中第四、五冊 (高二/高三)": {"MLS": 17.97, "CNP/C": 1.14, "MDD_target": 2.2, "DCD": 2.10},
@@ -201,15 +203,29 @@ with col_work:
         
         is_custom_overloaded = mdd_res["mdd"] >= mdd_threshold
 
+        # -------------------------------------------------------------
+        # 修正的 History 紀錄邏輯：確保切換標竿時也會正確寫入
+        # -------------------------------------------------------------
+        current_time = datetime.now().strftime("%H:%M:%S")
         log_entry = {
+            "時間": current_time,
             "標竿": target_level, 
             "MLS": l2sca_res["MLS"], 
             "CNP/C": l2sca_res["CNP/C"], 
             "MDD": mdd_res["mdd"], 
             "DCD": disc_res["discourse_density"]
         }
-        if not any(d["MDD"] == mdd_res["mdd"] and d["DCD"] == disc_res["discourse_density"] for d in st.session_state.history):
+        
+        if not st.session_state.history:
             st.session_state.history.append(log_entry)
+        else:
+            last_log = st.session_state.history[-1]
+            # 只有當「標竿」與「所有數值」都一模一樣時才不寫入，否則寫入新紀錄
+            if not (last_log["標竿"] == target_level and 
+                    last_log["MDD"] == mdd_res["mdd"] and 
+                    last_log["DCD"] == disc_res["discourse_density"] and
+                    last_log["MLS"] == l2sca_res["MLS"]):
+                st.session_state.history.append(log_entry)
 
         st.markdown("<hr style='margin: 1.5rem 0;'>", unsafe_allow_html=True)
         
@@ -338,13 +354,15 @@ with col_work:
         # TAB 3: 診斷與改寫建議
         # ==========================================
         with tab3:
+            # 使用 textwrap.dedent 安全排版 HTML
+            
             # 一、 詞彙層級
             if l2sca_res["CNP/C"] < current_norm["CNP/C"]:
                 lex_advice = "<div class='msg-box info-box' style='margin-bottom:0;'>💡 <strong>優化建議</strong>：可將一般動詞改寫為名詞化結構 (Nominalization)，增加學術感與語句凝聚度。</div>"
             else:
                 lex_advice = "<div class='msg-box success-box' style='margin-bottom:0;'>✅ <strong>字彙難易度適中</strong>。</div>"
 
-            lex_html = f"""
+            lex_html = textwrap.dedent(f"""
             <div class="custom-card">
                 <h4 style="margin-top: 0; color: #1e293b; margin-bottom: 1rem;">🔤 一、 字彙層級改寫建議</h4>
                 <p style="margin-bottom: 0.8rem; color: #334155;">
@@ -352,7 +370,7 @@ with col_work:
                 </p>
                 {lex_advice}
             </div>
-            """
+            """)
             st.markdown(lex_html, unsafe_allow_html=True)
 
             # 二、 句法層級
@@ -416,32 +434,24 @@ with col_work:
             else:
                 st.markdown("""<div class="msg-box success-box">🎉 <strong>句法結構順暢</strong>：未發現顯著的超載結構！</div>""", unsafe_allow_html=True)
 
-            # 三、 語篇層級
+            # 三、 語篇層級 (安全排版 HTML)
             disc_found_str = ", ".join([f"<em>{m['marker']}</em>" for m in disc_res["found_markers"][:5]]) or "無"
 
-            disc_html = f"""
+            if disc_res["discourse_density"] < current_norm["DCD"]:
+                disc_advice = f"""<div class="msg-box info-box" style="margin-bottom:0;">💡 <strong>優化建議</strong>：文章句與句之間的邏輯轉折較為隱晦。建議在段落推論處補強因果詞 (如 <em>Therefore, Consequently</em>) 或對比詞 (如 <em>However, In contrast</em>)，以引導學生理解篇章脈絡。</div>"""
+            else:
+                disc_advice = f"""<div class="msg-box success-box" style="margin-bottom:0;">✅ <strong>篇章銜接性極佳</strong>：使用了豐富的邏輯詞彙，文氣連貫。</div>"""
+
+            disc_html = textwrap.dedent(f"""
             <div class="custom-card" style="margin-top: 1.5rem;">
                 <h4 style="margin-top: 0; color: #1e293b; margin-bottom: 1rem;">📑 三、 語篇層級改寫建議</h4>
                 <p style="margin-bottom: 0.8rem; color: #334155; line-height: 1.8;">
                     • <strong>偵測到之銜接詞</strong>：{disc_found_str} 等<br>
                     • <strong>每百字密度 (DCD)</strong>：{disc_res['discourse_density']} % (標竿為 {current_norm['DCD']} %)
                 </p>
-            """
-
-            if disc_res["discourse_density"] < current_norm["DCD"]:
-                disc_html += """
-                <div class='msg-box info-box' style='margin-bottom:0;'>
-                    💡 <strong>優化建議</strong>：文章句與句之間的邏輯轉折較為隱晦。建議在段落推論處補強因果詞 (如 <em>Therefore, Consequently</em>) 或對比詞 (如 <em>However, In contrast</em>)，以引導學生理解篇章脈絡。
-                </div>
-                """
-            else:
-                disc_html += """
-                <div class='msg-box success-box' style='margin-bottom:0;'>
-                    ✅ <strong>篇章銜接性極佳</strong>：使用了豐富的邏輯詞彙，文氣連貫。
-                </div>
-                """
-
-            disc_html += "</div>"
+                {disc_advice}
+            </div>
+            """)
             st.markdown(disc_html, unsafe_allow_html=True)
 
         # ==========================================
@@ -450,12 +460,14 @@ with col_work:
         with tab4:
             st.markdown('<div class="custom-card">', unsafe_allow_html=True)
             st.markdown("### 📥 1. 下載自動化診斷報告")
-            report_md = f"""# MDTCD 教材複雜度診斷報告\n- **標竿年級**: {target_level}\n- **平均句長 (MLS)**: {l2sca_res['MLS']}\n- **複雜名詞組 (CNP/C)**: {l2sca_res['CNP/C']}\n- **平均依存距離 (MDD)**: {mdd_res['mdd']}\n- **邏輯詞密度 (DCD)**: {disc_res['discourse_density']}%\n- **超載點數量**: {len(mdd_res['overload_spans'])}"""
+            report_md = f"""# MDTCD 教材複雜度診斷報告\n- **分析時間**: {current_time}\n- **標竿年級**: {target_level}\n- **平均句長 (MLS)**: {l2sca_res['MLS']}\n- **複雜名詞組 (CNP/C)**: {l2sca_res['CNP/C']}\n- **平均依存距離 (MDD)**: {mdd_res['mdd']}\n- **邏輯詞密度 (DCD)**: {disc_res['discourse_density']}%\n- **超載點數量**: {len(mdd_res['overload_spans'])}"""
             st.download_button("📄 下載 Markdown 診斷報告 (.md)", data=report_md, file_name=f"MDTCD_Report.md", mime="text/markdown")
             st.markdown('</div>', unsafe_allow_html=True)
 
             st.markdown('<div class="custom-card">', unsafe_allow_html=True)
             st.markdown("### 📜 2. 本次 Session 歷程診斷比對表")
             if st.session_state.history:
-                st.dataframe(pd.DataFrame(st.session_state.history), use_container_width=True, height=300)
+                # 將最新的歷程放在最上面
+                history_df = pd.DataFrame(reversed(st.session_state.history))
+                st.dataframe(history_df, use_container_width=True, height=300)
             st.markdown('</div>', unsafe_allow_html=True)
