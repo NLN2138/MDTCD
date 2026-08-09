@@ -51,9 +51,6 @@ def load_nlp_model():
 
 nlp = load_nlp_model()
 
-if "history" not in st.session_state:
-    st.session_state.history = []
-
 # -----------------------------------------------------------------------------
 # 3. 全局 CSS 樣式
 # -----------------------------------------------------------------------------
@@ -170,7 +167,7 @@ with col_sys:
     st.markdown("<hr style='margin: 1rem 0;'>", unsafe_allow_html=True)
     mdd_threshold = st.slider("🚨 全篇 MDD 超載臨界值", min_value=1.5, max_value=4.5, value=3.0, step=0.1)
     
-    # 這裡將決定有幾條線跨越才發出單句改寫警報
+    # 決定有幾條線跨越才發出單句改寫警報
     arcs_threshold = st.slider("🧠 跨越弧(Storage Cost) 超載門檻", min_value=2, max_value=7, value=4, step=1, 
                                help="基於 DLT 依存局部性理論：單字上方若同時跨越多條語法弧線，大腦儲存成本將急遽上升。")
     
@@ -202,26 +199,7 @@ with col_work:
         disc_res = analyze_discourse_markers(active_text)
         
         is_custom_overloaded = mdd_res["mdd"] >= mdd_threshold
-
         current_time = datetime.now().strftime("%H:%M:%S")
-        log_entry = {
-            "時間": current_time,
-            "標竿": target_level, 
-            "MLS": l2sca_res["MLS"], 
-            "CNP/C": l2sca_res["CNP/C"], 
-            "MDD": mdd_res["mdd"], 
-            "DCD": disc_res["discourse_density"]
-        }
-        
-        if not st.session_state.history:
-            st.session_state.history.append(log_entry)
-        else:
-            last_log = st.session_state.history[-1]
-            if not (last_log["標竿"] == target_level and 
-                    last_log["MDD"] == mdd_res["mdd"] and 
-                    last_log["DCD"] == disc_res["discourse_density"] and
-                    last_log["MLS"] == l2sca_res["MLS"]):
-                st.session_state.history.append(log_entry)
 
         st.markdown("<hr style='margin: 1.5rem 0;'>", unsafe_allow_html=True)
         
@@ -231,7 +209,7 @@ with col_work:
         m2.metric("複雜名詞片語 (CNP/C)", l2sca_res["CNP/C"], delta=round(l2sca_res["CNP/C"] - current_norm["CNP/C"], 2))
         m3.metric("平均依存距離 (MDD)", mdd_res["mdd"], delta=round(mdd_res["mdd"] - current_norm["MDD_target"], 2), delta_color="inverse")
         
-        # 變更第 4 指標：顯示抓出幾個大腦瓶頸點
+        # 第 4 指標：顯示抓出幾個大腦瓶頸點
         overload_count = len(mdd_res['overload_spans'])
         m4.metric("跨越弧超載瓶頸點", f"{overload_count} 處", delta=f"超過 {arcs_threshold} 條", delta_color="inverse")
 
@@ -438,7 +416,7 @@ with col_work:
             st.markdown(disc_html, unsafe_allow_html=True)
 
         # ==========================================
-        # TAB 4: 系統功能
+        # TAB 4: 系統功能 (全標竿綜合評比)
         # ==========================================
         with tab4:
             st.markdown('<div class="custom-card">', unsafe_allow_html=True)
@@ -448,8 +426,32 @@ with col_work:
             st.markdown('</div>', unsafe_allow_html=True)
 
             st.markdown('<div class="custom-card">', unsafe_allow_html=True)
-            st.markdown("### 📜 2. 本次 Session 歷程診斷比對表")
-            if st.session_state.history:
-                history_df = pd.DataFrame(reversed(st.session_state.history))
-                st.dataframe(history_df, use_container_width=True, height=300)
+            st.markdown("### 📜 2. 📝 當前文本 vs. 所有基準標竿對照表")
+            
+            # 動態建立全標竿比較表
+            comparison_data = []
+            
+            # 第一列放「當前輸入文本」
+            comparison_data.append({
+                "類別 (Category)": "🎯 當前輸入文本 (Current)",
+                "平均句長 (MLS)": l2sca_res["MLS"],
+                "複雜名詞組 (CNP/C)": l2sca_res["CNP/C"],
+                "依存距離 (MDD)": mdd_res["mdd"],
+                "語篇銜接密度 (DCD %)": disc_res["discourse_density"]
+            })
+            
+            # 接著列出所有內建標竿
+            for norm_name, norm_vals in NORMS.items():
+                comparison_data.append({
+                    "類別 (Category)": f"📊 {norm_name}",
+                    "平均句長 (MLS)": norm_vals["MLS"],
+                    "複雜名詞組 (CNP/C)": norm_vals["CNP/C"],
+                    "依存距離 (MDD)": norm_vals["MDD_target"],
+                    "語篇銜接密度 (DCD %)": norm_vals["DCD"]
+                })
+                
+            comp_df = pd.DataFrame(comparison_data)
+            
+            # 顯示表格並隱藏預設索引
+            st.dataframe(comp_df, use_container_width=True, hide_index=True)
             st.markdown('</div>', unsafe_allow_html=True)
