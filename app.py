@@ -98,27 +98,33 @@ NORMS = {
 }
 
 # -----------------------------------------------------------------------------
-# OpenAI 智慧改寫函式
+# OpenAI 智慧改寫函式（已設定中小學英語教師角色與實際英文句子輸出）
 # -----------------------------------------------------------------------------
 def call_openai_rewriter(overloaded_sentence, target_word):
     if not client:
         return "⚠️ 尚未設定 OpenAI API Key。請透過 .env 檔案或 Streamlit Secrets 設定 OPENAI_API_KEY。"
     
     prompt = f"""
-    You are an expert EFL corpus linguist and writing instructor for Taiwanese high school students. 
-    The following sentence has a high dependency distance and causes working memory overload around the word '{target_word}':
+    You are an experienced EFL (English as a Foreign Language) junior and senior high school English teacher and corpus linguist in Taiwan. 
+    The following sentence has a high dependency distance (MDD) and causes working memory overload around the word '{target_word}':
     "{overloaded_sentence}"
     
-    Please provide simplified revision options in Traditional Chinese (台灣繁體中文):
-    1. 拆句建議 (Split Option): 將長句拆分為兩個簡單句以降低依存距離 (MDD)。
-    2. 結構簡化 (Phrasal Option): 濃縮過長的介詞組 (PP) 或修飾語。
+    Please provide actual, ready-to-use **English rewritten sentences** suitable for Taiwanese high school students, along with brief explanations in Traditional Chinese (台灣繁體中文):
+    
+    1. **拆句建議 (Split Option)**: 
+       - 提供改寫後的**實際英文句子**（將長句拆為兩個簡短的獨立小句，降低依存距離）。
+       - 附帶對應的中文翻譯。
+    
+    2. **結構簡化 (Phrasal Option)**: 
+       - 提供改寫後的**實際英文句子**（精簡過長的介詞組 PP 或關係子句，維持單句但結構更流暢）。
+       - 附帶對應的中文翻譯。
     """
     
     try:
         response = client.chat.completions.create(
             model="gpt-4o-mini",
             messages=[
-                {"role": "system", "content": "You are a helpful assistant for EFL corpus linguistics and textbook material design."},
+                {"role": "system", "content": "You are a professional EFL teacher and material designer who provides concise, natural English sentence revisions."},
                 {"role": "user", "content": prompt}
             ],
             temperature=0.3
@@ -227,7 +233,7 @@ with col_work:
                 st.components.v1.html(f"<div style='overflow-x: auto; padding: 20px; border-radius: 10px; border: 1px solid #e2e8f0; background: #f8fafc;'>{html_dep}</div>", height=500, scrolling=True)
 
         # ==========================================
-        # TAB 3: 診斷與改寫建議 (含單次最多 3 句限制與按需展開)
+        # TAB 3: 診斷與改寫建議 (限制最多 3 句且按需點擊呼叫)
         # ==========================================
         with tab3:
             if l2sca_res["CNP/C"] < current_norm["CNP/C"]:
@@ -251,7 +257,7 @@ with col_work:
             
             if mdd_res["overload_spans"]:
                 total_overloads = len(mdd_res['overload_spans'])
-                st.markdown(f"""<div class="msg-box error-box" style="margin-bottom: 1rem;"><strong>🚨 檢測到 {total_overloads} 處大腦工作記憶超載點</strong>（基於資源保護，系統限制每篇文章<strong>最多可使用 AI 索取 3 句</strong>改寫建議）：</div>""", unsafe_allow_html=True)
+                st.markdown(f"""<div class="msg-box error-box" style="margin-bottom: 1rem;"><strong>🚨 檢測到 {total_overloads} 處大腦工作記憶超載點</strong>（基於資源保護，系統限制每篇文章<strong>最多可使用 AI 索取 3 句</strong>實際改寫範例）：</div>""", unsafe_allow_html=True)
                 
                 doc = nlp(active_text)
                 sentences = [sent for sent in doc.sents if sent.text.strip()]
@@ -272,28 +278,26 @@ with col_work:
                         target_sent_obj = None
                         highlighted_sentence = active_text
 
-                    # 預設收合問題詞展開框
                     with st.expander(f"📍 **超載位置 {idx+1} / {len(limited_spans)}**：第 {sent_id} 句 (問題詞: `{target_word}`)", expanded=False):
                         st.markdown(f"<div style='background-color: #f8fafc; color: #0f172a; padding: 16px; border-left: 5px solid #eab308; margin-bottom: 15px; font-size: 1.1rem; line-height: 1.6; border-radius: 6px;'>{highlighted_sentence}</div>", unsafe_allow_html=True)
                         st.write(f"ℹ️ **超載原因**：{item['msg']}")
                         st.write("👉 **基礎改寫提示**：此處修飾語過長，建議將長介詞組 (PP) 或關係子句拆分為兩個獨立小句。")
                         
-                        # 
                         # 按需調用：使用 st.session_state 確保點選後才發送 API 請求並保留結果
                         ai_key = f"ai_result_{idx}"
                         if ai_key not in st.session_state:
                             st.session_state[ai_key] = None
 
-                        if st.button(f"🤖 點擊獲取 AI 智慧降載改寫 (位置 {idx+1})", key=f"ai_btn_{idx}"):
-                            with st.spinner("AI 正在分析依存結構併發出降載改寫方案..."):
+                        if st.button(f"🤖 點擊獲取教師級英文改寫範例 (位置 {idx+1})", key=f"ai_btn_{idx}"):
+                            with st.spinner("中小學英語教師 AI 正在為您重構低負荷英文句子..."):
                                 st.session_state[ai_key] = call_openai_rewriter(raw_sentence, target_word)
 
-                        # 如果已經有點擊過，直接顯示結果
+                        # 如果已經點擊過，顯示結果
                         if st.session_state[ai_key]:
                             st.info(st.session_state[ai_key])
                         
                         if target_sent_obj:
-                            with st.expander("👁️ 點擊展開該句之有方向拋物선依存樹圖", expanded=False):
+                            with st.expander("👁️ 點擊展開該句之有方向拋物線依存樹圖", expanded=False):
                                 svg_html = displacy.render(target_sent_obj, style="dep", options={"compact": False, "distance": 120, "bg": "#ffffff"}, page=False)
                                 st.components.v1.html(f"<div style='overflow-x: auto; background-color: #ffffff; padding: 15px; border: 1px solid #e2e8f0; border-radius: 8px;'>{svg_html}</div>", height=400, scrolling=True)
                 
