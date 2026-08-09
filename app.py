@@ -109,7 +109,7 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 NORMS = {
-    "高中第四、五冊 (高二/高三, Ting 2024)": {"MLS": 17.97, "CNP/C": 1.14, "MDD_target": 2.2},
+    "高中第四、五冊 (高二/高三)": {"MLS": 17.97, "CNP/C": 1.14, "MDD_target": 2.2},
     "學測優秀作文 (GSAT)": {"MLS": 19.28, "CNP/C": 1.03, "MDD_target": 2.4},
     "真實學術論文 (RA)": {"MLS": 27.31, "CNP/C": 2.32, "MDD_target": 3.2}
 }
