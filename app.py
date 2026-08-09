@@ -311,12 +311,12 @@ with col_work:
             """)
             st.markdown(lex_html, unsafe_allow_html=True)
 
-            # 二、 句法層級 (依跨越弧線數定位)
-            st.markdown("<h4 style='color: #1e293b; margin-top: 1.5rem; margin-bottom: 1rem;'>🌿 二、 句法層級改寫建議（動態定位跨越弧瓶頸）</h4>", unsafe_allow_html=True)
+            # 二、 句法層級 (依跨越弧線數定位 - 改為純白底、純黑字體)
+            st.markdown("<h4 style='color: #000000; background-color: #ffffff; margin-top: 1.5rem; margin-bottom: 1rem; padding: 8px; border-radius: 4px;'>🌿 二、 句法層級改寫建議（動態定位跨越弧瓶頸）</h4>", unsafe_allow_html=True)
             
             if mdd_res["overload_spans"]:
                 total_overloads = len(mdd_res['overload_spans'])
-                st.markdown(f"""<div class="msg-box error-box" style="margin-bottom: 1rem;"><strong>🚨 檢測到 {total_overloads} 處大腦工作記憶「儲存成本 (Storage Cost)」超載瓶頸</strong>（基於資源保護，系統限制每篇文章<strong>最多可使用 AI 索取 3 句</strong>實際改寫範例）：</div>""", unsafe_allow_html=True)
+                st.markdown(f"""<div class="msg-box" style="background-color: #ffffff; color: #000000; border: 1px solid #e2e8f0; border-left: 5px solid #ef4444; margin-bottom: 1rem;"><strong>🚨 檢測到 {total_overloads} 處大腦工作記憶「儲存成本 (Storage Cost)」超載瓶頸</strong>（基於資源保護，系統限制每篇文章<strong>最多可使用 AI 索取 3 句</strong>實際改寫範例）：</div>""", unsafe_allow_html=True)
                 
                 doc = nlp(active_text)
                 sentences = [sent for sent in doc.sents if sent.text.strip()]
@@ -339,7 +339,7 @@ with col_work:
                     with st.expander(f"📍 **瓶頸位置 {idx+1} / {len(limited_spans)}**：第 {sent_id} 句 (阻塞字: `{target_word}` / 跨越弧: {cross_count} 條)", expanded=False):
                         
                         st.markdown(f"##### 1️⃣ 瓶頸位置與基礎分析")
-                        st.markdown(f"<div style='background-color: #f8fafc; color: #0f172a; padding: 16px; border-left: 5px solid #eab308; margin-bottom: 15px; font-size: 1.1rem; line-height: 1.6; border-radius: 6px;'>{highlighted_sentence}</div>", unsafe_allow_html=True)
+                        st.markdown(f"<div style='background-color: #ffffff; color: #000000; padding: 16px; border: 1px solid #e2e8f0; border-left: 5px solid #eab308; margin-bottom: 15px; font-size: 1.1rem; line-height: 1.6; border-radius: 6px;'>{highlighted_sentence}</div>", unsafe_allow_html=True)
                         st.write(f"ℹ️ **診斷原因**：{item['msg']}")
                         st.write("👉 **自動改寫提示**：該字上方跨越過多未完成的語法關係，建議呼叫 AI 助教進行拆句或修飾語精簡。")
                         
