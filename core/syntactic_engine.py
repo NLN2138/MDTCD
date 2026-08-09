@@ -1,5 +1,6 @@
 import re
 import spacy
+import itertools
 from typing import Dict, List, Any
 
 # -----------------------------------------------------------------------------
@@ -240,51 +241,86 @@ def analyze_discourse_markers(text: str) -> Dict[str, Any]:
     }
 
 # -----------------------------------------------------------------------------
-# 4. 平均依存距離 (MDD) 與工作記憶負載計算
+# 4. 平均依存距離 (MDD) 與工作記憶負載計算 (跨越弧線 Storage Cost 版)
 # -----------------------------------------------------------------------------
-def calculate_mdd_and_memory_load(text: str) -> Dict[str, Any]:
+def calculate_mdd_and_memory_load(text: str, arcs_threshold: int = 4) -> Dict[str, Any]:
     """
     使用 spaCy 依存語法分析計算：
     1. 全篇平均依存距離 (Mean Dependency Distance, MDD)
-    2. 工作記憶超載點 (Overload Spans / Tokens)
+    2. 工作記憶超載點：基於 DLT 理論的「儲存成本(Storage Cost)」，計算單字上方跨越的弧線數量。
     """
     if not nlp:
         # 降級備用模式
-        return {"mdd": 2.1, "overload_spans": []}
+        return {"mdd": 2.1, "total_dependencies": 0, "overload_spans": []}
 
     doc = nlp(text)
     total_dd = 0
     total_dependencies = 0
-    overload_spans = []
+    raw_overload_spans = []
+
+    # 這些語法關係負載極低，計算跨越干擾時予以排除
+    SAFE_DEPS = {"punct", "det", "cc", "conj", "intj"} 
 
     for sent_idx, sent in enumerate(doc.sents, 1):
+        valid_arcs = []
+        
+        # 第一階段：收集該句所有的有效依存弧線
         for token in sent:
-            # 忽略標點符號與根節點 Self-dependency
             if token.pos_ == "PUNCT" or token.dep_ == "ROOT":
                 continue
-            
-            # 依存距離 = |Dependent Index - Head Index|
+                
+            # 1. 基礎 MDD 距離計算
             dd = abs(token.i - token.head.i)
             total_dd += dd
             total_dependencies += 1
-
-            # 若單一依附弧線過長 (如 DD >= 4)，記錄為超載點
-            if dd >= 4:
-                overload_spans.append({
+            
+            # 2. 記錄這條弧線的起迄範圍 (索引較小者為 start, 較大者為 end)
+            if token.dep_ not in SAFE_DEPS:
+                start_i = min(token.i, token.head.i)
+                end_i = max(token.i, token.head.i)
+                valid_arcs.append({
+                    "start": start_i, 
+                    "end": end_i, 
+                    "dep": token.dep_,
+                    "desc": f"{token.text}→{token.head.text}"
+                })
+        
+        # 第二階段：逐字掃描，計算每個單詞上方「跨越」了幾條弧線
+        for token in sent:
+            if token.pos_ == "PUNCT":
+                continue
+            
+            crossing_arcs = []
+            for arc in valid_arcs:
+                # 嚴格定義跨越：單詞的索引必須嚴格介於弧線的起迄點之間 (不含起迄點)
+                if arc["start"] < token.i < arc["end"]:
+                    crossing_arcs.append(arc["desc"])
+            
+            cross_count = len(crossing_arcs)
+            
+            # 如果跨越弧線數 >= 系統設定的門檻，則視為認知超載點
+            if cross_count >= arcs_threshold:
+                raw_overload_spans.append({
                     "sentence_id": sent_idx,
                     "word": token.text,
-                    "head": token.head.text,
-                    "dep": token.dep_,
-                    "distance": dd,
-                    "msg": f"單字 '{token.text}' 距離其核心支配詞 '{token.head.text}' 達 {dd} 個字（語法關係: {token.dep_}），易引發工作記憶遲滯。"
+                    "cross_count": cross_count,
+                    "crossing_details": crossing_arcs,
+                    "msg": f"該單字上方同時有 <b>{cross_count}</b> 條依存弧線跨越（例如: <i>{', '.join(crossing_arcs[:3])}</i> 等），導致大腦工作記憶「儲存成本 (Storage Cost)」產生瓶頸。"
                 })
+
+    # 第三階段：過濾與優化
+    # 為了避免同一長句反覆跳出多個相鄰的警報，同一句我們只保留「跨越弧數最高」的那個字（也就是最容易崩潰的瓶頸點）
+    filtered_spans = []
+    for key, group in itertools.groupby(raw_overload_spans, key=lambda x: x["sentence_id"]):
+        max_span = max(list(group), key=lambda x: x["cross_count"])
+        filtered_spans.append(max_span)
 
     mdd = round(total_dd / total_dependencies, 2) if total_dependencies > 0 else 0.0
 
     return {
         "mdd": mdd,
         "total_dependencies": total_dependencies,
-        "overload_spans": overload_spans
+        "overload_spans": filtered_spans
     }
 
 # -----------------------------------------------------------------------------
