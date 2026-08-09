@@ -15,7 +15,8 @@ from core.syntactic_engine import calculate_mdd_and_memory_load, calculate_l2sca
 st.set_page_config(
     page_title="TW-EFL MDTCD 診斷系統", 
     page_icon="🇹🇼",
-    layout="wide"
+    layout="wide",
+    initial_sidebar_state="collapsed" # 隱藏預設側邊欄，因為我們已建立自訂的系統區
 )
 
 @st.cache_resource
@@ -28,7 +29,7 @@ if "history" not in st.session_state:
     st.session_state.history = []
 
 # -----------------------------------------------------------------------------
-# 2. 全局 CSS 樣式 (取消 Fixed，改為自然流暢排版，提升明亮度)
+# 2. 全局 CSS 樣式 (真正固定標題、向下推擠內容、美化 UI)
 # -----------------------------------------------------------------------------
 st.markdown("""
 <style>
@@ -36,28 +37,42 @@ st.markdown("""
         font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif !important;
     }
     
-    /* 頂部全寬大標題 (自然排版，不使用 fixed 避免遮擋) */
-    .top-banner {
+    /* === 1. 真正固定在最上方的網頁標題 === */
+    .fixed-header {
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100vw;
+        z-index: 999999;
         background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
         color: white;
-        padding: 1.5rem 2.5rem;
-        border-radius: 12px;
-        box-shadow: 0 4px 15px rgba(0,0,0,0.1);
-        margin-bottom: 2rem;
+        padding: 1.2rem 2rem 1.2rem 4.5rem; /* 左側留白避開 Streamlit 漢堡選單 */
+        box-shadow: 0 4px 15px rgba(0,0,0,0.2);
         border-bottom: 4px solid #3b82f6;
     }
-    .top-title { font-size: 2rem !important; font-weight: 800 !important; color: #ffffff !important; margin: 0 !important; letter-spacing: 0.5px; }
-    .top-subtitle { font-size: 1rem !important; color: #94a3b8 !important; margin-top: 8px !important; font-weight: 400; }
+    .header-title { font-size: 1.85rem !important; font-weight: 800 !important; margin: 0 !important; letter-spacing: 0.5px; }
+    .header-subtitle { font-size: 0.95rem !important; color: #94a3b8 !important; margin-top: 6px !important; }
 
-    /* 儀表板數值字體優化 (改為明亮的寶石藍，解決太暗的問題) */
+    /* 確保 Streamlit 原生的漢堡選單浮在標題之上 */
+    header[data-testid="stHeader"] {
+        background: transparent !important;
+        z-index: 1000000 !important; 
+    }
+
+    /* 將主要內容區塊往下推，避免被固定的標題擋住 */
+    .block-container {
+        padding-top: 150px !important; 
+    }
+
+    /* === 2. 數據儀表板美化 === */
     [data-testid="stMetricValue"] {
         font-size: 2.5rem !important;
         font-weight: 800 !important;
-        color: #1d4ed8 !important; 
+        color: #1d4ed8 !important; /* 明亮的寶石藍 */
     }
     [data-testid="stMetricLabel"] { font-size: 1.1rem !important; color: #475569; font-weight: 700; }
     
-    /* 頁籤美化與微黏滯 (只在作業區內 sticky) */
+    /* 頁籤美化 */
     div[data-baseweb="tab-list"] {
         background-color: #f8fafc;
         padding: 10px 10px 0px 10px;
@@ -65,7 +80,7 @@ st.markdown("""
         border-radius: 8px 8px 0 0;
     }
 
-    /* 卡片與提示框樣式 */
+    /* === 3. 卡片與訊息框樣式 === */
     .custom-card { background-color: #ffffff; border-radius: 12px; padding: 1.5rem; border: 1px solid #e2e8f0; margin-bottom: 1.5rem; box-shadow: 0 2px 4px rgba(0,0,0,0.02); }
     .msg-box { padding: 1.2rem; border-radius: 8px; font-size: 1.05rem; line-height: 1.6; margin-bottom: 0; }
     .warning-box { background-color: #fffbeb; border-left: 5px solid #f59e0b; color: #92400e; }
@@ -73,18 +88,12 @@ st.markdown("""
     .success-box { background-color: #f0fdf4; border-left: 5px solid #22c55e; color: #166534; }
     .info-box { background-color: #f0f9ff; border-left: 5px solid #0ea5e9; color: #075985; }
     
-    /* 系統區外框 */
     .system-panel { background-color: #f8fafc; padding: 1.5rem; border-radius: 12px; border: 1px solid #cbd5e1; }
 </style>
-""", unsafe_allow_html=True)
 
-# -----------------------------------------------------------------------------
-# 3. 最上、最前：網頁標題 (Top Banner)
-# -----------------------------------------------------------------------------
-st.markdown("""
-<div class="top-banner">
-    <div class="top-title">🇹🇼 台灣英語教材多維度複雜度自動化診斷系統 (MDTCD)</div>
-    <div class="top-subtitle">Multi-Dimensional Textbook Complexity Diagnostics | 融合 SLA、依存語法與 XAI 可解釋性 AI</div>
+<div class="fixed-header">
+    <div class="header-title">🇹🇼 台灣英語教材多維度複雜度自動化診斷系統 (MDTCD)</div>
+    <div class="header-subtitle">Multi-Dimensional Textbook Complexity Diagnostics | 融合 SLA、依存語法與 XAI 可解釋性 AI</div>
 </div>
 """, unsafe_allow_html=True)
 
@@ -96,7 +105,7 @@ NORMS = {
 }
 
 # =============================================================================
-# 網格佈局：左 系統區 (1份寬度) | 右 作業區 (3份寬度)
+# 3. 網格佈局：左 系統區 (1份寬度) | 右 作業區 (3份寬度)
 # =============================================================================
 col_sys, col_work = st.columns([1, 3], gap="large")
 
@@ -134,14 +143,15 @@ with col_work:
 
     st.markdown("### 📝 文本輸入與分析")
     
-    # 輸入區
     user_input = st.text_area("請貼入英文課文或教材（若未貼入，將自動採用預設範文）：", height=150, value=default_sample)
     cleaned_text = re.sub(r'([a-zA-Z0-9])\n([a-zA-Z0-9])', r'\1. \2', user_input.strip())
     active_text = cleaned_text if cleaned_text else default_sample
 
     analyze_btn = st.button("🚀 開始多維度自動診斷", type="primary", use_container_width=True)
 
-    # 執行分析
+    # ==========================================
+    # 核心分析邏輯與渲染
+    # ==========================================
     if analyze_btn or active_text:
         mdd_res = calculate_mdd_and_memory_load(active_text)
         l2sca_res = calculate_l2sca_approximations(active_text)
@@ -171,32 +181,28 @@ with col_work:
             "⚙️ 系統功能 (System)"
         ])
 
-        # ==========================================
-        # TAB 1: 為什麼 (完全垂直排列：詞彙 -> 句法 -> 篇章)
-        # ==========================================
+        # --- TAB 1: 為什麼 (完全垂直排列，合併 HTML 避免空白) ---
         with tab1:
-            st.markdown(f"<h4 style='color: #334155;'>📌 當前比對基準：<b>{target_level}</b></h4><br>", unsafe_allow_html=True)
+            st.markdown(f"<h4 style='margin-bottom: 1.2rem; color: #334155;'>📌 當前比對基準：<b>{target_level}</b></h4>", unsafe_allow_html=True)
             
             # 一、詞彙
             if l2sca_res["CNP/C"] < current_norm["CNP/C"]:
                 lex_msg = f"""<div class="msg-box info-box"><strong>ℹ️ 片語凝聚度偏低</strong><br>當前文本複雜名詞片語 (CNP/C) 為 <strong>{l2sca_res['CNP/C']}</strong>，低於標竿值 ({current_norm['CNP/C']})。建議增加學術詞彙或名詞後置修飾語。</div>"""
             else:
                 lex_msg = f"""<div class="msg-box success-box"><strong>✅ 片語凝聚度達標</strong><br>CNP/C 為 <strong>{l2sca_res['CNP/C']}</strong>，達到標竿標準 ({current_norm['CNP/C']})。</div>"""
-            st.markdown(f"""<div class="custom-card"><h4 style="margin-top:0; color:#1e293b;">🔤 一、 詞彙與片語凝聚度診斷</h4>{lex_msg}</div>""", unsafe_allow_html=True)
+            st.markdown(f"""<div class="custom-card"><h4 style="margin-top:0; margin-bottom: 0.8rem; color:#1e293b;">🔤 一、 詞彙與片語凝聚度診斷</h4>{lex_msg}</div>""", unsafe_allow_html=True)
 
             # 二、句法
             if is_custom_overloaded:
-                syn_msg = f"""<div class="msg-box warning-box"><strong>⚠️ 認知加工負荷偏高</strong><br>全篇 MDD 為 <strong>{mdd_res['mdd']}</strong>（超過門檻 {mdd_threshold}）。大腦在處理長距離依存關係時容易產生工作記憶遲滯。</div>"""
+                syn_msg = f"""<div class="msg-box warning-box"><strong>⚠️ 認知加工負荷偏高</strong><br>全篇 MDD 為 <strong>{mdd_res['mdd']}</strong>（超過自訂門檻 {mdd_threshold}）。大腦在處理長距離依存關係時容易產生工作記憶遲滯。</div>"""
             else:
                 syn_msg = f"""<div class="msg-box success-box"><strong>✅ 認知加工負荷適中</strong><br>全篇 MDD 為 <strong>{mdd_res['mdd']}</strong>，低於超載門檻 ({mdd_threshold})。</div>"""
-            st.markdown(f"""<div class="custom-card"><h4 style="margin-top:0; color:#1e293b;">🌿 二、 句法與認知負荷診斷</h4>{syn_msg}</div>""", unsafe_allow_html=True)
+            st.markdown(f"""<div class="custom-card"><h4 style="margin-top:0; margin-bottom: 0.8rem; color:#1e293b;">🌿 二、 句法與認知負荷診斷</h4>{syn_msg}</div>""", unsafe_allow_html=True)
             
             # 三、語篇
-            st.markdown("""<div class="custom-card"><h4 style="margin-top:0; color:#1e293b;">📑 三、 語篇邏輯連貫度診斷</h4><div class="msg-box success-box"><strong>✅ 篇章結構完整</strong><br>系統偵測到明確的段落劃分與基礎語篇單位 (EDUs)。符合閱讀所需之上下文邏輯銜接。</div></div>""", unsafe_allow_html=True)
+            st.markdown("""<div class="custom-card"><h4 style="margin-top:0; margin-bottom: 0.8rem; color:#1e293b;">📑 三、 語篇邏輯連貫度診斷</h4><div class="msg-box success-box"><strong>✅ 篇章結構完整</strong><br>系統偵測到明確的段落劃分與基礎語篇單位 (EDUs)。符合閱讀所需之上下文邏輯銜接。</div></div>""", unsafe_allow_html=True)
 
-        # ==========================================
-        # TAB 2: 如何計算 (完全垂直排列)
-        # ==========================================
+        # --- TAB 2: 如何計算 (完全垂直排列) ---
         with tab2:
             st.markdown("### 1. 📊 當前數值 vs. 標竿數值對比")
             fig = go.Figure(data=[
@@ -222,14 +228,12 @@ with col_work:
             doc = nlp(active_text)
             first_sent = list(doc.sents)[0] if list(doc.sents) else doc
             
-            # 弧線參數：compact=False 產生優美的拋物線
+            # 【關鍵】設定 compact=False 以繪製拋物線
             displacy_options = {"compact": False, "distance": 130, "word_spacing": 45, "color": "#1e293b", "bg": "#f8fafc", "font": "Arial"}
             html_dep = displacy.render(first_sent, style="dep", options=displacy_options, page=False)
             st.components.v1.html(f"<div style='overflow-x: auto; padding: 20px; border-radius: 10px; border: 1px solid #e2e8f0; background: #f8fafc;'>{html_dep}</div>", height=500, scrolling=True)
 
-        # ==========================================
-        # TAB 3: 診斷與改寫建議 (完全垂直排列)
-        # ==========================================
+        # --- TAB 3: 診斷與改寫建議 (完全垂直排列) ---
         with tab3:
             # 一、詞彙
             st.markdown('<div class="custom-card">', unsafe_allow_html=True)
@@ -279,9 +283,7 @@ with col_work:
             st.write("• **邏輯轉折詞**：成功使用 *Furthermore, Therefore* 等，邏輯清晰。\n• **連貫性優化提示**：建議增加標示「對比」或「條件」的 EDUs 句型。")
             st.markdown('</div>', unsafe_allow_html=True)
 
-        # ==========================================
-        # TAB 4: 系統功能 (完全垂直排列)
-        # ==========================================
+        # --- TAB 4: 系統功能 (完全垂直排列) ---
         with tab4:
             st.markdown('<div class="custom-card">', unsafe_allow_html=True)
             st.markdown("### 📥 1. 下載自動化診斷報告")
