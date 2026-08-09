@@ -5,6 +5,24 @@ import spacy
 from spacy import displacy
 import re
 import pandas as pd
+import os
+from openai import OpenAI
+from dotenv import load_dotenv
+
+# 載入本機 .env 檔案（如果有的話）
+load_dotenv()
+
+# 安全取得 OpenAI API Key
+api_key = None
+try:
+    api_key = st.secrets.get("OPENAI_API_KEY")
+except Exception:
+    pass
+
+if not api_key:
+    api_key = os.getenv("OPENAI_API_KEY")
+
+client = OpenAI(api_key=api_key) if api_key else None
 
 # 載入核心計算模組
 from core.syntactic_engine import calculate_mdd_and_memory_load, calculate_l2sca_approximations
@@ -61,19 +79,10 @@ st.markdown("""
 
     .custom-card { background-color: #ffffff; border-radius: 12px; padding: 1.5rem; border: 1px solid #e2e8f0; margin-bottom: 1.5rem; box-shadow: 0 2px 4px rgba(0,0,0,0.02); }
     
-    /* 訊息提示框核心樣式 */
     .msg-box { padding: 1.2rem; border-radius: 8px; font-size: 1.05rem; line-height: 1.6; margin-bottom: 0; }
-    
-    /* 🔴 紅色 (超載) */
     .error-box { background-color: #fef2f2; border-left: 5px solid #ef4444; color: #991b1b; }
-    
-    /* 🟩 綠色 (適中 / 達標) */
     .success-box { background-color: #f0fdf4; border-left: 5px solid #22c55e; color: #166534; }
-    
-    /* 🟦 藍色 (偏低 / 建議) */
     .info-box { background-color: #eff6ff; border-left: 5px solid #3b82f6; color: #1e3a8a; }
-    
-    .system-panel { background-color: #f8fafc; padding: 1.5rem; border-radius: 12px; border: 1px solid #cbd5e1; }
 </style>
 
 <div class="fixed-header">
@@ -87,6 +96,36 @@ NORMS = {
     "學測優秀作文 (GSAT)": {"MLS": 19.28, "CNP/C": 1.03, "MDD_target": 2.4},
     "真實學術論文 (RA)": {"MLS": 27.31, "CNP/C": 2.32, "MDD_target": 3.2}
 }
+
+# -----------------------------------------------------------------------------
+# OpenAI 智慧改寫函式
+# -----------------------------------------------------------------------------
+def call_openai_rewriter(overloaded_sentence, target_word):
+    if not client:
+        return "⚠️ 尚未設定 OpenAI API Key。請透過 .env 檔案或 Streamlit Secrets 設定 OPENAI_API_KEY。"
+    
+    prompt = f"""
+    You are an expert EFL corpus linguist and writing instructor for Taiwanese high school students. 
+    The following sentence has a high dependency distance and causes working memory overload around the word '{target_word}':
+    "{overloaded_sentence}"
+    
+    Please provide simplified revision options in Traditional Chinese (台灣繁體中文):
+    1. 拆句建議 (Split Option): 將長句拆分為兩個簡單句以降低依存距離 (MDD)。
+    2. 結構簡化 (Phrasal Option): 濃縮過長的介詞組 (PP) 或修飾語。
+    """
+    
+    try:
+        response = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {"role": "system", "content": "You are a helpful assistant for EFL corpus linguistics and textbook material design."},
+                {"role": "user", "content": prompt}
+            ],
+            temperature=0.3
+        )
+        return response.choices[0].message.content
+    except Exception as e:
+        return f"❌ AI 調用發生錯誤：{str(e)}"
 
 # =============================================================================
 # 3. 網格佈局
@@ -150,21 +189,18 @@ with col_work:
         with tab1:
             st.markdown(f"<h4 style='margin-bottom: 1.2rem; color: #334155;'>📌 當前比對基準：<b>{target_level}</b></h4>", unsafe_allow_html=True)
             
-            # 🔤 一、詞彙 (偏低: 藍色 / 達標: 綠色)
             if l2sca_res["CNP/C"] < current_norm["CNP/C"]:
                 lex_msg = f"""<div class="msg-box info-box"><strong>ℹ️ 片語凝聚度偏低</strong><br>當前文本複雜名詞片語 (CNP/C) 為 <strong>{l2sca_res['CNP/C']}</strong>，低於標竿值 ({current_norm['CNP/C']})。建議增加學術詞彙或名詞後置修飾語。</div>"""
             else:
                 lex_msg = f"""<div class="msg-box success-box"><strong>✅ 片語凝聚度達標</strong><br>CNP/C 為 <strong>{l2sca_res['CNP/C']}</strong>，達到標竿標準 ({current_norm['CNP/C']})。</div>"""
             st.markdown(f"""<div class="custom-card"><h4 style="margin-top:0; margin-bottom: 0.8rem; color:#1e293b;">🔤 一、 詞彙與片語凝聚度診斷</h4>{lex_msg}</div>""", unsafe_allow_html=True)
 
-            # 🌿 二、句法 (超載: 紅色 / 適中: 綠色)
             if is_custom_overloaded:
                 syn_msg = f"""<div class="msg-box error-box"><strong>🚨 認知加工負荷超載</strong><br>全篇 MDD 為 <strong>{mdd_res['mdd']}</strong>（超過門檻 {mdd_threshold}）。大腦在處理長距離依存關係時容易產生工作記憶遲滯。</div>"""
             else:
                 syn_msg = f"""<div class="msg-box success-box"><strong>✅ 認知加工負荷適中</strong><br>全篇 MDD 為 <strong>{mdd_res['mdd']}</strong>，低於超載門檻 ({mdd_threshold})。</div>"""
             st.markdown(f"""<div class="custom-card"><h4 style="margin-top:0; margin-bottom: 0.8rem; color:#1e293b;">🌿 二、 句法與認知負荷診斷</h4>{syn_msg}</div>""", unsafe_allow_html=True)
             
-            # 📑 三、語篇 (適中: 綠色)
             st.markdown("""<div class="custom-card"><h4 style="margin-top:0; margin-bottom: 0.8rem; color:#1e293b;">📑 三、 語篇邏輯連貫度診斷</h4><div class="msg-box success-box"><strong>✅ 篇章結構完整</strong><br>系統偵測到明確的段落劃分與基礎語篇單位 (EDUs)。符合閱讀所需之上下文邏輯銜接。</div></div>""", unsafe_allow_html=True)
 
         # ==========================================
@@ -191,10 +227,9 @@ with col_work:
                 st.components.v1.html(f"<div style='overflow-x: auto; padding: 20px; border-radius: 10px; border: 1px solid #e2e8f0; background: #f8fafc;'>{html_dep}</div>", height=500, scrolling=True)
 
         # ==========================================
-        # TAB 3: 診斷與改寫建議
+        # TAB 3: 診斷與改寫建議 (含單次最多 3 句限制與按需展開)
         # ==========================================
         with tab3:
-            # 1. 詞彙層級 (偏低: 藍色 / 達標: 綠色)
             if l2sca_res["CNP/C"] < current_norm["CNP/C"]:
                 lex_advice = "<div class='msg-box info-box' style='margin-bottom:0;'>💡 <strong>優化建議</strong>：可將一般動詞改寫為名詞化結構 (Nominalization)，增加學術感。</div>"
             else:
@@ -212,16 +247,19 @@ with col_work:
             """
             st.markdown(lex_html, unsafe_allow_html=True)
 
-            # 2. 句法層級 (超載: 紅色)
             st.markdown("<h4 style='color: #1e293b; margin-top: 1.5rem; margin-bottom: 1rem;'>🌿 二、 句法層級改寫建議</h4>", unsafe_allow_html=True)
             
             if mdd_res["overload_spans"]:
-                st.markdown(f"""<div class="msg-box error-box" style="margin-bottom: 1rem;"><strong>🚨 檢測到 {len(mdd_res['overload_spans'])} 處大腦工作記憶超載點</strong>（未閉合依存弧 ≥ {arcs_threshold} 條）：</div>""", unsafe_allow_html=True)
+                total_overloads = len(mdd_res['overload_spans'])
+                st.markdown(f"""<div class="msg-box error-box" style="margin-bottom: 1rem;"><strong>🚨 檢測到 {total_overloads} 處大腦工作記憶超載點</strong>（基於資源保護，系統限制每篇文章<strong>最多可使用 AI 索取 3 句</strong>改寫建議）：</div>""", unsafe_allow_html=True)
                 
                 doc = nlp(active_text)
                 sentences = [sent for sent in doc.sents if sent.text.strip()]
                 
-                for idx, item in enumerate(mdd_res["overload_spans"]):
+                # 限制最多處理前 3 筆，防止濫用與超支
+                limited_spans = mdd_res["overload_spans"][:3]
+                
+                for idx, item in enumerate(limited_spans):
                     sent_id = item["sentence_id"]
                     target_word = item["word"]
                     
@@ -229,25 +267,41 @@ with col_work:
                         target_sent_obj = sentences[sent_id - 1]
                         raw_sentence = target_sent_obj.text.strip()
                         pattern = re.compile(rf'\b({re.escape(target_word)})\b', re.IGNORECASE)
-                        highlighted_sentence = pattern.sub(r"<mark style='background-color: #fde047; color: #854d0e; font-weight: bold; padding: 2px 6px; border-radius: 4px;'>\1</mark>", raw_sentence)
+                        highlighted_sentence = pattern.sub(r"<mark style='background-color: #fde047; color: #854d0e; font-weight: bold; padding: 2px 6px; border-radius: 2px;'>\1</mark>", raw_sentence)
                     else:
                         target_sent_obj = None
                         highlighted_sentence = active_text
 
-                    # 【修改點】將 expanded=True 改為 expanded=False，預設收合問題詞展開框
-                    with st.expander(f"📍 **超載位置 {idx+1}**：第 {sent_id} 句 (問題詞: `{target_word}`)", expanded=False):
+                    # 預設收合問題詞展開框
+                    with st.expander(f"📍 **超載位置 {idx+1} / {len(limited_spans)}**：第 {sent_id} 句 (問題詞: `{target_word}`)", expanded=False):
                         st.markdown(f"<div style='background-color: #f8fafc; color: #0f172a; padding: 16px; border-left: 5px solid #eab308; margin-bottom: 15px; font-size: 1.1rem; line-height: 1.6; border-radius: 6px;'>{highlighted_sentence}</div>", unsafe_allow_html=True)
                         st.write(f"ℹ️ **超載原因**：{item['msg']}")
-                        st.write("👉 **句法改寫建議**：此處修飾語過長，建議將長介詞組 (PP) 或關係子句**拆分為兩個獨立小句**。")
+                        st.write("👉 **基礎改寫提示**：此處修飾語過長，建議將長介詞組 (PP) 或關係子句拆分為兩個獨立小句。")
+                        
+                        # 
+                        # 按需調用：使用 st.session_state 確保點選後才發送 API 請求並保留結果
+                        ai_key = f"ai_result_{idx}"
+                        if ai_key not in st.session_state:
+                            st.session_state[ai_key] = None
+
+                        if st.button(f"🤖 點擊獲取 AI 智慧降載改寫 (位置 {idx+1})", key=f"ai_btn_{idx}"):
+                            with st.spinner("AI 正在分析依存結構併發出降載改寫方案..."):
+                                st.session_state[ai_key] = call_openai_rewriter(raw_sentence, target_word)
+
+                        # 如果已經有點擊過，直接顯示結果
+                        if st.session_state[ai_key]:
+                            st.info(st.session_state[ai_key])
                         
                         if target_sent_obj:
-                            with st.expander("👁️ 點擊展開該句之有方向拋物線依存樹圖", expanded=False):
+                            with st.expander("👁️ 點擊展開該句之有方向拋物선依存樹圖", expanded=False):
                                 svg_html = displacy.render(target_sent_obj, style="dep", options={"compact": False, "distance": 120, "bg": "#ffffff"}, page=False)
                                 st.components.v1.html(f"<div style='overflow-x: auto; background-color: #ffffff; padding: 15px; border: 1px solid #e2e8f0; border-radius: 8px;'>{svg_html}</div>", height=400, scrolling=True)
+                
+                if total_overloads > 3:
+                    st.caption(f"*(註：當前文本共有 {total_overloads} 處超載點，基於成本與防濫用原則，僅展示前 3 筆 AI 降載通道)*")
             else:
                 st.markdown("""<div class="msg-box success-box">🎉 <strong>句法結構順暢</strong>：未發現顯著的超載結構！</div>""", unsafe_allow_html=True)
 
-            # 3. 語篇層級
             disc_html = """
             <div class="custom-card" style="margin-top: 1.5rem;">
                 <h4 style="margin-top: 0; color: #1e293b; margin-bottom: 1rem;">📑 三、 語篇層級改寫建議</h4>
