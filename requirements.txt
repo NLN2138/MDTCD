@@ -11,5 +11,9 @@ plotly>=5.18.0
 torch>=2.0.0
 transformers>=4.35.0
 
+# 【新增】OpenAI 官方套件與環境變數管理套件
+openai>=1.0.0
+python-dotenv>=1.0.0
+
 # 直接安裝 spaCy 語言模型
 https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.7.1/en_core_web_sm-3.7.1-py3-none-any.whl
