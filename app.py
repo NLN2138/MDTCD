@@ -98,7 +98,7 @@ NORMS = {
 }
 
 # -----------------------------------------------------------------------------
-# OpenAI 智慧改寫函式（已設定中小學英語教師角色與實際英文句子輸出）
+# OpenAI 智慧改寫函式
 # -----------------------------------------------------------------------------
 def call_openai_rewriter(overloaded_sentence, target_word):
     if not client:
@@ -233,7 +233,7 @@ with col_work:
                 st.components.v1.html(f"<div style='overflow-x: auto; padding: 20px; border-radius: 10px; border: 1px solid #e2e8f0; background: #f8fafc;'>{html_dep}</div>", height=500, scrolling=True)
 
         # ==========================================
-        # TAB 3: 診斷與改寫建議 (限制最多 3 句且按需點擊呼叫)
+        # TAB 3: 診斷與改寫建議
         # ==========================================
         with tab3:
             if l2sca_res["CNP/C"] < current_norm["CNP/C"]:
@@ -262,7 +262,6 @@ with col_work:
                 doc = nlp(active_text)
                 sentences = [sent for sent in doc.sents if sent.text.strip()]
                 
-                # 限制最多處理前 3 筆，防止濫用與超支
                 limited_spans = mdd_res["overload_spans"][:3]
                 
                 for idx, item in enumerate(limited_spans):
@@ -279,11 +278,28 @@ with col_work:
                         highlighted_sentence = active_text
 
                     with st.expander(f"📍 **超載位置 {idx+1} / {len(limited_spans)}**：第 {sent_id} 句 (問題詞: `{target_word}`)", expanded=False):
+                        
+                        # 1. 超載位置與基礎分析
+                        st.markdown(f"##### 1️⃣ 超載位置與基礎分析")
                         st.markdown(f"<div style='background-color: #f8fafc; color: #0f172a; padding: 16px; border-left: 5px solid #eab308; margin-bottom: 15px; font-size: 1.1rem; line-height: 1.6; border-radius: 6px;'>{highlighted_sentence}</div>", unsafe_allow_html=True)
                         st.write(f"ℹ️ **超載原因**：{item['msg']}")
                         st.write("👉 **基礎改寫提示**：此處修飾語過長，建議將長介詞組 (PP) 或關係子句拆分為兩個獨立小句。")
                         
-                        # 按需調用：使用 st.session_state 確保點選後才發送 API 請求並保留結果
+                        st.markdown("<hr style='margin: 1rem 0; border: none; border-top: 1px dashed #cbd5e1;'>", unsafe_allow_html=True)
+
+                        # 2. 依存樹圖分析
+                        st.markdown(f"##### 2️⃣ 依存樹圖分析")
+                        if target_sent_obj:
+                            with st.expander("👁️ 點擊展開該句之有方向拋物線依存樹圖", expanded=False):
+                                svg_html = displacy.render(target_sent_obj, style="dep", options={"compact": False, "distance": 120, "bg": "#ffffff"}, page=False)
+                                st.components.v1.html(f"<div style='overflow-x: auto; background-color: #ffffff; padding: 15px; border: 1px solid #e2e8f0; border-radius: 8px;'>{svg_html}</div>", height=400, scrolling=True)
+                        else:
+                            st.write("無法產生對應的依存樹圖。")
+
+                        st.markdown("<hr style='margin: 1rem 0; border: none; border-top: 1px dashed #cbd5e1;'>", unsafe_allow_html=True)
+                        
+                        # 3. AI 助教改寫建議
+                        st.markdown(f"##### 3️⃣ AI 助教改寫建議")
                         ai_key = f"ai_result_{idx}"
                         if ai_key not in st.session_state:
                             st.session_state[ai_key] = None
@@ -292,15 +308,9 @@ with col_work:
                             with st.spinner("中小學英語教師 AI 正在為您重構低負荷英文句子..."):
                                 st.session_state[ai_key] = call_openai_rewriter(raw_sentence, target_word)
 
-                        # 如果已經點擊過，顯示結果
                         if st.session_state[ai_key]:
                             st.info(st.session_state[ai_key])
                         
-                        if target_sent_obj:
-                            with st.expander("👁️ 點擊展開該句之有方向拋物線依存樹圖", expanded=False):
-                                svg_html = displacy.render(target_sent_obj, style="dep", options={"compact": False, "distance": 120, "bg": "#ffffff"}, page=False)
-                                st.components.v1.html(f"<div style='overflow-x: auto; background-color: #ffffff; padding: 15px; border: 1px solid #e2e8f0; border-radius: 8px;'>{svg_html}</div>", height=400, scrolling=True)
-                
                 if total_overloads > 3:
                     st.caption(f"*(註：當前文本共有 {total_overloads} 處超載點，基於成本與防濫用原則，僅展示前 3 筆 AI 降載通道)*")
             else:
