@@ -191,8 +191,22 @@ with col_work:
         "Therefore, developing critical thinking skills regarding digital privacy has become an essential responsibility for high school students in the twenty-first century."
     )
 
+    # 將提示語句與預設範文組合成 Placeholder 的文字
+    placeholder_text = f"請貼入英文課文或教材（若未貼入，將自動採用以下預設範文）：\n\n{default_sample}"
+
     st.markdown("### 📝 文本輸入與分析")
-    user_input = st.text_area("請貼入英文課文或教材（若未貼入，將自動採用預設範文）：", height=150, value=default_sample)
+    
+    # 使用 placeholder 讓文字預設為暗色，點擊輸入後消失
+    # label_visibility="collapsed" 會隱藏原本在上方的標籤，使介面更乾淨
+    user_input = st.text_area(
+        label="文本輸入區", 
+        value="", 
+        placeholder=placeholder_text, 
+        height=220,
+        label_visibility="collapsed"
+    )
+    
+    # 如果使用者輸入為空，就自動帶入預設範文進行分析
     cleaned_text = re.sub(r'([a-zA-Z0-9])\n([a-zA-Z0-9])', r'\1. \2', user_input.strip())
     active_text = cleaned_text if cleaned_text else default_sample
 
