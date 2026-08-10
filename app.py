@@ -171,7 +171,7 @@ with col_sys:
         max_value=4.5, 
         value=3.0, 
         step=0.1,
-        help="平均依存距離 (Mean Dependency Distance)。指句中修飾詞與核心詞的平均距離。數值越高，代表結構越分散，讀者需要消耗更多「大腦工作記憶」來拼湊句意。台灣高中教材通常建議控制在 2.0 - 2.5 之間。"
+        help="平均依存距離 (Mean Dependency Distance)。指句中修飾詞與核心詞的平均距離。數值越高，代表結構越分散，讀者需要消耗更多「大腦工作記憶」來拼湊句意。理論上認知極限閾值是 3。"
     )
     
     arcs_threshold = st.slider("🧠 跨越弧(Storage Cost) 超載門檻", min_value=2, max_value=7, value=4, step=1, 
