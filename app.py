@@ -312,7 +312,7 @@ with col_work:
             st.markdown(lex_html, unsafe_allow_html=True)
 
             # 二、 句法層級 (依跨越弧線數定位 - 改為純白底、純黑字體)
-            st.markdown("<h4 style='color: #000000; background-color: #ffffff; margin-top: 1.5rem; margin-bottom: 1rem; padding: 8px; border-radius: 4px;'>🌿 二、 句法層級改寫建議（動態定位跨越弧瓶頸）</h4>", unsafe_allow_html=True)
+            st.markdown("<h4 style='color: #000000; background-color: #ffffff; margin-top: 1.5rem; margin-bottom: 1rem; padding: 8px; border-radius: 4px;'>🌿 二、 句法層級改寫建議</h4>", unsafe_allow_html=True)
             
             if mdd_res["overload_spans"]:
                 total_overloads = len(mdd_res['overload_spans'])
