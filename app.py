@@ -311,12 +311,20 @@ with col_work:
             """)
             st.markdown(lex_html, unsafe_allow_html=True)
 
-            # 二、 句法層級 (依跨越弧線數定位 - 改為純白底、純黑字體)
-            st.markdown("<h4 style='color: #000000; background-color: #ffffff; margin-top: 1.5rem; margin-bottom: 1rem; padding: 8px; border-radius: 4px;'>🌿 二、 句法層級改寫建議</h4>", unsafe_allow_html=True)
-            
+            # 二、 句法層級 (依跨越弧線數定位 - 已修復外觀斷層)
             if mdd_res["overload_spans"]:
                 total_overloads = len(mdd_res['overload_spans'])
-                st.markdown(f"""<div class="msg-box" style="background-color: #ffffff; color: #000000; border: 1px solid #e2e8f0; border-left: 5px solid #ef4444; margin-bottom: 1rem;"><strong>🚨 檢測到 {total_overloads} 處大腦工作記憶「儲存成本 (Storage Cost)」超載瓶頸</strong>（基於資源保護，系統限制每篇文章<strong>最多可使用 AI 索取 3 句</strong>實際改寫範例）：</div>""", unsafe_allow_html=True)
+                
+                # 將標題與警告訊息包在同一個 custom-card 區塊內，避免中間出現背景色斷層
+                st.markdown(f"""
+                <div class="custom-card" style="margin-top: 1.5rem; margin-bottom: 1rem;">
+                    <h4 style="margin-top: 0; color: #1e293b; margin-bottom: 1rem;">🌿 二、 句法層級改寫建議</h4>
+                    <div class="msg-box error-box" style="margin-bottom: 0;">
+                        <strong>🚨 檢測到 {total_overloads} 處大腦工作記憶「儲存成本 (Storage Cost)」超載瓶頸</strong><br>
+                        <span style="font-size: 0.95em;">（基於資源保護，系統限制每篇文章<strong>最多可使用 AI 索取 3 句</strong>實際改寫範例）：</span>
+                    </div>
+                </div>
+                """, unsafe_allow_html=True)
                 
                 doc = nlp(active_text)
                 sentences = [sent for sent in doc.sents if sent.text.strip()]
@@ -370,7 +378,15 @@ with col_work:
                 if total_overloads > 3:
                     st.caption(f"*(註：當前文本共有 {total_overloads} 處瓶頸點，基於成本與防濫用原則，僅展示前 3 筆 AI 降載通道)*")
             else:
-                st.markdown("""<div class="msg-box success-box">🎉 <strong>句法結構順暢</strong>：未發現任何「跨越弧線數」超標的工作記憶瓶頸點！</div>""", unsafe_allow_html=True)
+                # 沒發現錯誤時，一樣使用 custom-card 包裝，保持版面一致
+                st.markdown("""
+                <div class="custom-card" style="margin-top: 1.5rem; margin-bottom: 1rem;">
+                    <h4 style="margin-top: 0; color: #1e293b; margin-bottom: 1rem;">🌿 二、 句法層級改寫建議</h4>
+                    <div class="msg-box success-box" style="margin-bottom: 0;">
+                        🎉 <strong>句法結構順暢</strong>：未發現任何「跨越弧線數」超標的工作記憶瓶頸點！
+                    </div>
+                </div>
+                """, unsafe_allow_html=True)
 
             # 三、 語篇層級
             disc_found_str = ", ".join([f"<em>{m['marker']}</em>" for m in disc_res["found_markers"][:5]]) or "無"
