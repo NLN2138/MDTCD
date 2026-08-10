@@ -235,7 +235,7 @@ with col_work:
 
         st.markdown("<br>", unsafe_allow_html=True)
 
-        tab1, tab2, tab3, tab4 = st.tabs(["💡 為什麼 (Why)", "📊 如何計算 (How)", "🛠️ 診斷與改寫 (Recommendations)", "⚙️ 系統功能 (System)"])
+        tab1, tab2, tab3, tab4 = st.tabs(["💡 為什麼 (Why)", "📊 如何計算 (How)", "🛠️ 診斷與改寫 (Recommendations)", "⚙️ 下載報告 (Report)"])
 
         # ==========================================
         # TAB 1: 為什麼
