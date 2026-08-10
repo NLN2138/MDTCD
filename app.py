@@ -165,7 +165,14 @@ with col_sys:
     current_norm = NORMS[target_level]
     
     st.markdown("<hr style='margin: 1rem 0;'>", unsafe_allow_html=True)
-    mdd_threshold = st.slider("🚨 全篇 MDD 超載臨界值", min_value=1.5, max_value=4.5, value=3.0, step=0.1)
+    mdd_threshold = st.slider(
+        "🚨 全篇 MDD 超載臨界值", 
+        min_value=1.5, 
+        max_value=4.5, 
+        value=3.0, 
+        step=0.1,
+        help="平均依存距離 (Mean Dependency Distance)。指句中修飾詞與核心詞的平均距離。數值越高，代表結構越分散，讀者需要消耗更多「大腦工作記憶」來拼湊句意。台灣高中教材通常建議控制在 2.0 - 2.5 之間。"
+    )
     
     arcs_threshold = st.slider("🧠 跨越弧(Storage Cost) 超載門檻", min_value=2, max_value=7, value=4, step=1, 
                                help="基於 DLT 依存局部性理論：單字上方若同時跨越多條語法弧線，大腦儲存成本將急遽上升。")
