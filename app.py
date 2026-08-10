@@ -103,7 +103,7 @@ st.markdown("""
 </style>
 
 <div class="fixed-header">
-    <div class="header-title">🌿台灣英語教材複雜度自動化診斷系統 (MDTCD)</div>
+    <div class="header-title">🌿台灣英語教材複雜度自動化診斷系統 (MDTCD) v1.0 雛形</div>
     <div class="header-subtitle">Multi-Dimensional Textbook Complexity Diagnostics | 融合 SLA、依存語法與 XAI 可解釋性 AI</div>
 </div>
 """, unsafe_allow_html=True)
